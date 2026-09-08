@@ -1,0 +1,27 @@
+[Desktop Entry]
+Type=Application
+Name=Battery usage
+GenericName=Per-application power use
+GenericName[es]=Consumo por aplicación
+Comment=What is eating the battery, in order.
+Comment[es]=Qué se está comiendo la batería, en orden.
+Exec=app-usage
+Icon=app-usage
+Terminal=false
+Categories=System;Monitor;Qt;
+Keywords=battery;power;energy;usage;drain;
+Keywords[es]=bateria;batería;consumo;energia;energía;pila;
+
+# The name is NOT translated. "Battery usage" is what this program is called,
+# the same way Spectacle is Spectacle in every language, and a launcher entry
+# that changes its name with the locale is one you cannot tell anyone to look
+# for. The description under it is translated; the name is not.
+
+# Exec is app-usage, the window. The daemon is app-usaged and pointing a
+# launcher entry at it would start a second collector in the foreground,
+# writing the same files as the service.
+
+# Without StartupWMClass Plasma cannot tie the window to this entry: the id Qt
+# reports comes from QGuiApplication::setDesktopFileName(), so the two have to
+# agree.
+StartupWMClass=app-usage

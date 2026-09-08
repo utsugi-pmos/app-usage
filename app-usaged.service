@@ -1,0 +1,30 @@
+[Unit]
+Description=Battery usage per application: el recolector
+Documentation=file:///usr/share/doc/app-usage/README.md
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/app-usaged --demonio
+Restart=on-failure
+RestartSec=30
+
+# It has to survive a restart without eating the hour in progress, and it does:
+# the store reads today's rows back at startup. Verified, because the first
+# version did not and lost 20.6 J and eight rows on a service that had been up
+# for ninety seconds.
+
+# A monitor that shows up in its own measurements is not wrong, it is honest --
+# the report lists "app-usaged" like any other application. But it should be small
+# enough not to matter, so it runs out of the way of what the user is doing.
+Nice=10
+IOSchedulingClass=idle
+CPUSchedulingPolicy=batch
+MemoryMax=64M
+
+# Deliberately NOT sandboxed further. It writes to ~/.local/state/app-usage and
+# shells out to sudo once at startup to read the energy model from debugfs, so
+# ProtectHome and NoNewPrivileges both break it. Hardening that stops the thing
+# working is worse than none: it gets deleted the first time someone debugs it.
+
+[Install]
+WantedBy=default.target
