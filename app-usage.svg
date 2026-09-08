@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A battery lying on its side, filled with three bars of different length and
+  colour. It says "what is INSIDE the battery, broken down", which is this app,
+  rather than "how full is the battery", which the panel indicator already says.
+
+  Full colour, not the monochrome `currentColor` convention: this is a launcher
+  entry sitting next to other application icons, and next to Spectacle and
+  Discover a flat outline reads as a system utility nobody is meant to open.
+
+  DRAWN TO SURVIVE 22 PIXELS AND EITHER BACKGROUND. The first version had a dark
+  grey shell, which on the phone's dark drawer left three coloured bars floating
+  in a smudge: colourful in the file, and unreadable where it is actually looked
+  at. So the body is a light fill with a dark outline. The fill carries it
+  on a dark background, the outline carries it on a light one, and neither
+  depends on the theme. The bars are thick and few for the same reason; at 22 px
+  anything finer turns to mush.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48">
+  <!-- the terminal, behind the body so the outline stays unbroken -->
+  <rect x="40" y="18" width="6.5" height="12" rx="2.6" fill="#2b303b"/>
+
+  <!-- the cell -->
+  <rect x="2.5" y="10.5" width="39" height="27" rx="6" fill="#eceff4"
+        stroke="#2b303b" stroke-width="3"/>
+
+  <!-- what is inside it, biggest first -->
+  <rect x="8"   y="15.5" width="27"   height="4.6" rx="2.3" fill="#3f9f63"/>
+  <rect x="8"   y="21.7" width="17.5" height="4.6" rx="2.3" fill="#e0a230"/>
+  <rect x="8"   y="27.9" width="9"    height="4.6" rx="2.3" fill="#d1483c"/>
+</svg>

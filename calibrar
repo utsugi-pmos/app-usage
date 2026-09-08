@@ -1,0 +1,689 @@
+#!/usr/bin/env python3
+# Phase 0 of task 018: measure what this phone actually spends, per CPU
+# operating point and per screen brightness level.
+#
+# WHY THIS EXISTS AT ALL
+#
+# The kernel already publishes a power figure per OPP in
+# /sys/kernel/debug/energy_model/. Those numbers are not measurements: they are
+# `dynamic-power-coefficient` from the sm7150 device tree (137 uW/MHz/V^2 for
+# the A55s, 480 for the A76s) multiplied by the OPP voltage read from the OSM
+# LUT. Dynamic power only -- no leakage, no L3/DSU, no bus. And the coefficient
+# is an upstream DTSI value very likely inherited from sdm845/sm8150 and never
+# measured on this die.
+#
+# So the model is trustworthy as a set of RELATIVE weights between OPPs and not
+# as absolute milliwatts. This script produces the missing scale factor by
+# measuring the real thing.
+#
+# WHY SYNTHETIC ORTHOGONAL LOADS AND NOT REAL USE
+#
+# Under real use CPU frequency and GPU activity rise together, so a regression
+# cannot separate them -- they are collinear. Pinning one frequency on one
+# cluster with the `userspace` governor and burning exactly one thread there
+# isolates a single variable per measurement, which turns the fit into plain
+# arithmetic: P_opp = P_measured - P_baseline. No NNLS needed.
+#
+# WHY IT MUST RUN UNPLUGGED
+#
+# With USB connected the battery does not circulate: a measured run gave an
+# average of -0.37 mA, and an attempt to validate the model while plugged in
+# drifted 66 mW on the idle control with a standard deviation of 119 mW. The
+# numbers are worthless. This is the same thing task 015 found the hard way:
+# "plugged into the PC" is not "charging".
+#
+# Results go to a CSV as each point completes, not at the end, because this runs
+# unplugged over wifi and losing the connection must not lose the run.
+
+import argparse
+import csv
+import os
+import signal
+import statistics
+import subprocess
+import sys
+import time
+
+QG = "/sys/class/power_supply/qcom_qg/"
+# The charger lives beside the gauge, and it has its own constant so the test
+# harness can redirect it. Deriving it from QG would be neater but wrong: on a
+# real phone this path has to be checked, and a harness that cannot point it
+# somewhere else can only run where no charger exists -- which is to say,
+# anywhere except the one machine this script is for.
+POWER_SUPPLY = "/sys/class/power_supply/"
+CPUFREQ = "/sys/devices/system/cpu/cpufreq/"
+BACKLIGHT = "/sys/class/backlight/backlight/"
+EM = "/sys/kernel/debug/energy_model/"
+
+# One representative CPU per performance domain. policy0 drives cpu0-5 (A55),
+# policy6 drives cpu6-7 (A76); the load is pinned to the first CPU of each.
+DOMAINS = [("policy0", 0, "A55"), ("policy6", 6, "A76")]
+
+
+def read(path):
+	with open(path) as f:
+		return f.read().strip()
+
+
+def read_int(path):
+	return int(read(path))
+
+
+def write_root(path, value):
+	"""sysfs writes that need root. sudo -n works without a password here."""
+	subprocess.run(["sudo", "-n", "sh", "-c", "echo %s > %s" % (value, path)],
+	               check=True, capture_output=True)
+
+
+# ---------------------------------------------------------------- measurement
+
+def power_mw():
+	"""Instantaneous battery power. current_now is uA, voltage_now is uV.
+
+	Sign is dropped: the gauge reports discharge as negative, and this script
+	refuses to run while charging, so magnitude is what matters.
+
+	Do NOT be tempted to use current_avg instead to get a smoother number: it is
+	frozen on this device. Measured, it sat at exactly -5035 for 60 seconds
+	while current_now moved normally.
+	"""
+	return abs(read_int(QG + "current_now")) * read_int(QG + "voltage_now") / 1e9
+
+
+def sample(seconds, period=0.25):
+	"""Average power over a window, with the tails trimmed.
+
+	The gauge quantises at 152.6 uA and a single sample has a standard
+	deviation of 4.34 mA with a heavy tail (measured over 579 samples: range
+	-48.8 to +21.1 mA). Averaging is what makes it usable -- sigma of the mean
+	falls to 0.43 mA at 10 s and 0.25 mA at 30 s, i.e. about 1.9 mW.
+
+	Trimming the outer sixth on each side removes the tail without pretending
+	the outliers were not there; the standard deviation reported back is of the
+	trimmed set, so a noisy point is visible in the CSV rather than hidden.
+	"""
+	vals = []
+	end = time.monotonic() + seconds
+	while time.monotonic() < end:
+		vals.append(power_mw())
+		time.sleep(period)
+	vals.sort()
+	cut = len(vals) // 6
+	if cut:
+		vals = vals[cut:-cut]
+	return statistics.mean(vals), statistics.pstdev(vals), len(vals)
+
+
+def temperature_c():
+	"""Hottest CPU-ish thermal zone, to spot throttling contaminating a point."""
+	hottest = 0
+	for zone in sorted(os.listdir("/sys/class/thermal")):
+		if not zone.startswith("thermal_zone"):
+			continue
+		try:
+			t = read_int("/sys/class/thermal/%s/temp" % zone) / 1000.0
+		except (OSError, ValueError):
+			continue
+		hottest = max(hottest, t)
+	return hottest
+
+
+# --------------------------------------------------------------------- states
+
+def charger_online():
+	"""Which supply, if any, is feeding the system. None when on battery alone."""
+	for supply in ("pm8150b-charger", "tcpm-source-psy-c440000.spmi:pmic@0:typec@1500"):
+		online = POWER_SUPPLY + supply + "/online"
+		if os.path.exists(online) and read(online) == "1":
+			return supply
+	return None
+
+
+def check_input_pinned(seconds=8.0):
+	"""Is the USB input a constant offset, or is it tracking the load?
+
+	Every figure this script produces is a DELTA over a baseline, so a supply
+	that contributes a fixed number of milliwatts cancels out of every one of
+	them and does no harm. A supply that ramps up when the CPU does is fatal:
+	the load would pay for itself and every factor would come out near zero.
+
+	Which of the two it is depends on the state of charge, so it is measured
+	rather than assumed. Loads one A76 for a few seconds and reports how far
+	the charger input moved, against how far the battery moved.
+
+	Returns (input_delta_mw, battery_delta_mw).
+	"""
+	def charger_mw():
+		supply = POWER_SUPPLY + "pm8150b-charger/"
+		try:
+			return (read_int(supply + "current_now") / 1e6
+			        * read_int(supply + "voltage_now") / 1e6 * 1000)
+		except (OSError, ValueError):
+			return 0.0
+
+	def both(seconds):
+		bat, chg = [], []
+		end = time.monotonic() + seconds
+		while time.monotonic() < end:
+			bat.append(power_mw())
+			chg.append(charger_mw())
+			time.sleep(0.05)
+		return statistics.mean(bat), statistics.mean(chg)
+
+	idle_bat, idle_chg = both(seconds / 2)
+	proc = burn(7, seconds)
+	time.sleep(0.5)
+	busy_bat, busy_chg = both(seconds / 2)
+	try:
+		proc.kill()
+	except Exception:
+		pass
+	proc.wait()
+	return busy_chg - idle_chg, busy_bat - idle_bat
+
+
+def guard_unplugged(allow_plugged=False):
+	"""Refuse to measure in a state where the numbers would be meaningless.
+
+	Unplugged is the clean case and stays the default. But "plugged in" is not
+	one state, it is two, and only one of them ruins the measurement:
+
+	  - Battery full, system draw below what USB supplies. The battery floats,
+	    current_now sits at fractions of a milliamp, and the baseline wanders --
+	    this is the case that drifted 66 mW with a sigma of 119. Useless.
+	  - Battery not full, system draw above what USB supplies. The input pins at
+	    its limit and the battery covers every extra milliwatt. Measured on this
+	    phone: the charger moved 0.9 mW while a full A76 core moved the battery
+	    659 mW, and the baseline drifted 7.7 mW over the whole run.
+
+	In the second regime the input is a constant offset, and a constant offset
+	cancels out of a delta. So --con-cable does not skip the check, it swaps it
+	for the one that actually matters, and refuses just as hard when the regime
+	is the first kind.
+	"""
+	status = read(QG + "status")
+	supply = charger_online()
+
+	if supply is None:
+		if status == "Charging":
+			sys.exit("The gauge says 'Charging' with no visible charger. I don't trust it;\n"
+			         "check /sys/class/power_supply/ before continuing.")
+		return
+
+	if not allow_plugged:
+		sys.exit(
+			"A charger is connected (%s).\n"
+			"\n"
+			"Unplug it, that is the clean way. If you can't, see --con-cable:\n"
+			"with the battery at half charge and the phone drawing more than\n"
+			"USB supplies, the input pins and the deltas still hold. --con-cable\n"
+			"itself checks this and refuses if it does not hold." % supply)
+
+	print("Charger connected (%s). Checking the regime..." % supply)
+	if status != "Discharging":
+		sys.exit(
+			"  the gauge says '%s', not 'Discharging'.\n"
+			"  The battery is not covering the draw, so a rise in load is\n"
+			"  absorbed by USB and stays invisible. Unplug, or drain the battery\n"
+			"  until the draw exceeds what the cable supplies." % status)
+
+	d_input, d_batt = check_input_pinned()
+	print("  one A76 thread moved the USB input %+.1f mW and the battery %+.1f mW"
+	      % (d_input, d_batt))
+	if abs(d_batt) < 100:
+		sys.exit("  the battery barely moved: it is not covering the load. Unplug.")
+	if abs(d_input) > 0.10 * abs(d_batt):
+		sys.exit("  the USB input tracks the load (more than 10%% of how far the\n"
+		         "  battery moved). Here the factors would come out low by construction.\n"
+		         "  Unplug.")
+	print("  input pinned: it is a constant offset and cancels out of every delta.")
+	print("  WARNING: per-sample noise is ~5x worse than unplugged.")
+
+	# And a warning that is NOT about the validity of the measurement but about current.
+	#
+	# The input being pinned means two things at once: that the deltas
+	# hold, and that the phone is already drawing more than the cable gives. The
+	# first is what authorizes measuring; the second is a power budget
+	# in the red, and this run is going to add load on top of it -- the
+	# brightness ladder pushes the panel to maximum, about 620 mW more.
+	#
+	# BOOT-03 documents that the PMIC cuts out cold in exactly this way,
+	# leaving no oops and no pstore entry. I treated the two as one and on
+	# 2026-08-29 the phone dropped on me halfway through the ladder.
+	#
+	# It does not abort: with a full cell there is plenty of margin and forbidding
+	# it would be overkill. But it is said, because whoever runs it blind deserves to know.
+	try:
+		capacidad = read_int(QG + "capacity")
+	except (OSError, ValueError):
+		capacidad = 100
+	print("  NOTE: the input is at its limit, meaning the phone is already drawing on the")
+	print("  cell. This run adds load on top and the PMIC may cut out cold")
+	print("  (see BOOT-03). Battery at %d%%." % capacidad)
+	if capacidad < 50:
+		print("  Below 50%% the risk is real: better unplug or charge first.")
+	print()
+
+
+def energy_model():
+	"""The kernel's power figure per OPP, in mW, keyed by (policy, kHz).
+
+	Needs root: it lives in debugfs.
+	"""
+	out = subprocess.run(
+		["sudo", "-n", "sh", "-c",
+		 "for d in %s*/ps:*/; do echo \"$d $(cat $d/frequency) $(cat $d/power)\"; done" % EM],
+		capture_output=True, text=True)
+	model = {}
+	for line in out.stdout.splitlines():
+		parts = line.split()
+		if len(parts) != 3:
+			continue
+		path, khz, uw = parts
+		cpu = path.rstrip("/").split("/")[-2]          # ".../cpu0/ps:300000/" -> cpu0
+		policy = "policy0" if cpu == "cpu0" else "policy6"
+		model[(policy, int(khz))] = int(uw) / 1000.0
+	return model
+
+
+class Frozen:
+	"""Pins one performance domain to one frequency, and puts it back.
+
+	Restoring is not best-effort: leaving the phone on the `userspace` governor
+	at 300 MHz would make it feel broken, and the user is not watching this run
+	-- it is happening over wifi with the screen off. The restore therefore runs
+	from a finally block AND from a signal handler.
+	"""
+
+	def __init__(self, policy):
+		self.policy = policy
+		self.base = CPUFREQ + policy + "/"
+		self.old_gov = read(self.base + "scaling_governor")
+		self.old_max = read(self.base + "scaling_max_freq")
+		self.old_min = read(self.base + "scaling_min_freq")
+
+	def freqs(self):
+		return sorted(int(f) for f in read(self.base + "scaling_available_frequencies").split())
+
+	def set(self, khz):
+		write_root(self.base + "scaling_governor", "userspace")
+		# min before max going down, max before min going up: the kernel rejects
+		# a min above the current max and vice versa, silently keeping the old
+		# value, which would quietly measure the wrong frequency.
+		if khz < int(read(self.base + "scaling_max_freq")):
+			write_root(self.base + "scaling_min_freq", khz)
+			write_root(self.base + "scaling_max_freq", khz)
+		else:
+			write_root(self.base + "scaling_max_freq", khz)
+			write_root(self.base + "scaling_min_freq", khz)
+		write_root(self.base + "scaling_setspeed", khz)
+
+	def actual(self):
+		return read_int(self.base + "scaling_cur_freq")
+
+	def restore(self):
+		try:
+			write_root(self.base + "scaling_min_freq", self.old_min)
+			write_root(self.base + "scaling_max_freq", self.old_max)
+			write_root(self.base + "scaling_governor", self.old_gov)
+		except subprocess.CalledProcessError:
+			pass
+
+
+def burn(cpu, seconds):
+	"""One busy thread pinned to one CPU. Nothing else: no memory traffic, no
+	syscalls, so what is measured is the core and not the bus."""
+	return subprocess.Popen(
+		["taskset", "-c", str(cpu), "sh", "-c",
+		 "end=$(( $(date +%%s) + %d )); while [ $(date +%%s) -lt $end ]; do :; done" % seconds],
+		stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def escribir_config(ruta, factores, pantalla, drift):
+	"""The calibration, in the format the daemon reads.
+
+	Only the sections this run actually measured are written. A pass with
+	'--solo brillo' leaves the [cpu] section out, and the daemon tells the
+	difference: without CPU factors it does not apply the sharing cap, because
+	capping it with the unscaled milliwatts from the device tree would measure
+	the missing calibration instead of the missing model.
+
+	It merges with whatever was already there: two partial passes, one for CPU
+	and one for brightness, must add up instead of overwriting each other.
+	"""
+	import configparser
+	c = configparser.RawConfigParser()
+	c.optionxform = str
+	if os.path.exists(ruta):
+		try:
+			c.read(ruta, encoding="utf-8")
+		except Exception:
+			pass
+
+	if abs(drift) > 20:
+		print("  NOT writing the calibration: the drift of %+.1f mW says the"
+		      " run is contaminated." % drift)
+		return False
+
+	if factores:
+		if not c.has_section("cpu"):
+			c.add_section("cpu")
+		for policy, valor in factores.items():
+			clave = "a55_factor" if policy == "policy0" else "a76_factor"
+			c.set("cpu", clave, "%.4f" % valor)
+	if pantalla:
+		if not c.has_section("screen"):
+			c.add_section("screen")
+		c.set("screen", "base_mw", "%.1f" % pantalla[0])
+		c.set("screen", "full_mw", "%.1f" % pantalla[1])
+
+	os.makedirs(os.path.dirname(ruta), exist_ok=True)
+	with open(ruta, "w", encoding="utf-8") as f:
+		c.write(f)
+	return True
+
+
+# ----------------------------------------------------------------------- runs
+
+def main():
+	# Line-buffered output, not block-buffered.
+	#
+	# Redirected to a file -- which is how this is run, because it takes minutes
+	# and the ssh session drops when the phone saturates -- Python keeps the output
+	# in an 8 KB buffer and only flushes it at the end. If the phone powers off
+	# halfway, the ENTIRE record of what it was doing when it died is lost.
+	#
+	# It really happened on 2026-08-29: the phone dropped during the brightness ladder
+	# and the log came up empty, so there is no way to know where it was. The
+	# CSV did survive, because that was already flushed on every measurement.
+	sys.stdout.reconfigure(line_buffering=True)
+
+	ap = argparse.ArgumentParser(
+		description="Measures real power per frequency point and per brightness level.")
+	ap.add_argument("--salida", default=os.path.expanduser("~/calibracion-bateria.csv"))
+	# THE FILE THAT REALLY MATTERS. The CSV is the raw data, useful for
+	# looking point by point if a setting came out odd; but the daemon does not read CSV,
+	# it reads this INI. Without writing it, calibrating was an exercise with no effect:
+	# everything was measured and the sharing stayed without a screen row forever.
+	ap.add_argument("--config", default=os.path.expanduser(
+		"~/.config/app-usage/calibracion.ini"),
+		help="where the calibration the daemon reads is written")
+	ap.add_argument("--ventana", type=float, default=30.0,
+	                help="seconds per point (30 gives ~1.9 mW resolution)")
+	ap.add_argument("--reposo", type=float, default=45.0,
+	                help="seconds of baseline, best measured longer")
+	ap.add_argument("--solo", choices=["cpu", "brillo"], help="measure only one part")
+	ap.add_argument("--continuar", action="store_true",
+	                help="resume: keeps the points already in the CSV "
+	                     "and measures only the missing ones")
+	ap.add_argument("--con-cable", action="store_true",
+	                help="allow measuring with USB plugged in, if the input is "
+	                     "pinned. It is checked, not assumed")
+	args = ap.parse_args()
+
+	guard_unplugged(allow_plugged=args.con_cable)
+
+	model = energy_model()
+	if not model:
+		sys.exit("Could not read the energy model. 'sudo -n' is needed for debugfs.")
+
+	frozen = {}
+	restored = False
+
+	def restore_all(*_):
+		nonlocal restored, brightness_restored
+		if restored:
+			return
+		restored = True
+		for f in frozen.values():
+			f.restore()
+		if not brightness_restored:
+			brightness_restored = True
+			try:
+				write_root(BACKLIGHT + "brightness", old_brightness)
+			except subprocess.CalledProcessError:
+				pass
+
+	# Ctrl-C, or the ssh connection dying, must not leave the phone pinned.
+	signal.signal(signal.SIGINT, lambda *a: (restore_all(), sys.exit(130)))
+	signal.signal(signal.SIGTERM, lambda *a: (restore_all(), sys.exit(143)))
+
+	# The whole run happens with the backlight at zero, and that is not a detail.
+	#
+	# Every CPU point is a delta over the baseline, so the baseline has to hold
+	# still for the ~18 minutes the run takes. Measured at whatever brightness
+	# happened to be set, it does not: the panel is the biggest consumer on the
+	# phone, and if the screen dims or blanks itself halfway through -- which it
+	# will, nobody is touching it -- the baseline silently moves and every point
+	# after that is wrong by a few hundred mW.
+	#
+	# Zero is also the right reference for the brightness ladder itself, which
+	# then reads as "what the panel adds over black" instead of a set of
+	# negative numbers relative to an arbitrary starting point.
+	old_brightness = read(BACKLIGHT + "brightness")
+	brightness_restored = False
+
+	# Resume, because an 18-minute run on a phone that reboots on its own
+	# never finishes if it has to start from scratch every time. The CSV is already
+	# written point by point, so all that was missing was reading it at startup.
+	#
+	# The baseline is NOT reused even if it is in the file: it is from another
+	# session, with another temperature and another phone state, and all the points
+	# are deltas over it. Reusing it would mix two experiments.
+	rows = []
+	hechos = set()
+	if args.continuar and os.path.exists(args.salida):
+		with open(args.salida, newline="") as f:
+			for r in csv.DictReader(f):
+				if r.get("tipo") in ("cpu", "brillo"):
+					hechos.add((r["tipo"], r.get("dominio", ""), r.get("khz_pedido", ""),
+					            r.get("brillo", "")))
+		print("Resuming: %d points already measured in %s" % (len(hechos), args.salida))
+		print("  (the baseline is re-measured: the previous one is from another session)")
+
+	modo = "a" if (args.continuar and os.path.exists(args.salida)) else "w"
+	out = open(args.salida, modo, newline="")
+	w = csv.writer(out)
+	if modo == "w":
+		w.writerow(["tipo", "dominio", "khz_pedido", "khz_real", "brillo",
+		            "mw_medido", "mw_sd", "muestras", "mw_delta", "mw_modelo",
+		            "factor", "fiable", "temp_c"])
+		out.flush()
+
+	def ya_hecho(tipo, dominio="", khz="", brillo=""):
+		return (tipo, str(dominio), str(khz), str(brillo)) in hechos
+
+	def emit(row):
+		rows.append(row)
+		w.writerow(row)
+		out.flush()          # unplugged over wifi: never buffer a result
+
+	try:
+		print("Calibrating. Output: %s" % args.salida)
+		print("Battery at %s%%, %.2f V\n" % (read(QG + "capacity"),
+		                                    read_int(QG + "voltage_now") / 1e6))
+
+		# --- is the phone even still? -----------------------------------------
+		#
+		# Everything below is a delta over the baseline, so if the draw
+		# is moving on its own while measuring, the baseline comes out wrong and with
+		# it ALL the points. The control drift catches that at the end --
+		# but at the end, after spending the whole run.
+		#
+		# It really happened on 2026-08-29: launched three minutes after a
+		# boot, with the system still settling, the control drifted
+		# -261.8 mW and the two minutes had to be thrown away. Checking beforehand costs
+		# twenty seconds.
+		write_root(BACKLIGHT + "brightness", 0)
+		time.sleep(2)
+		print("Checking that the draw is steady...")
+		a, a_sd, _ = sample(8)
+		b, b_sd, _ = sample(8)
+		deriva = b - a
+		print("  %.1f mW -> %.1f mW  (deriva %+.1f, sd %.1f/%.1f)"
+		      % (a, b, deriva, a_sd, b_sd))
+		if abs(deriva) > 25:
+			sys.exit(
+				"The draw moves on its own (%+.1f mW in 16 s). Every measurement would be\n"
+				"a delta over a baseline that will not hold still.\n"
+				"Wait for the phone to settle -- freshly booted it takes a few\n"
+				"minutes -- and launch it again. With --continuar you lose nothing."
+				% deriva)
+		print("  steady, continuing.\n")
+
+		print("Baseline with the backlight at 0 (%.0f s, do not touch the phone)..."
+		      % args.reposo)
+		base, base_sd, base_n = sample(args.reposo)
+		print("  idle = %.1f mW (sd %.1f, n=%d)\n" % (base, base_sd, base_n))
+		emit(["reposo", "", "", "", read(BACKLIGHT + "brightness"),
+		      round(base, 2), round(base_sd, 2), base_n, 0, "", "", 1,
+		      round(temperature_c(), 1)])
+
+		# --- one point per CPU operating point ---------------------------------
+		if args.solo != "brillo":
+			for policy, cpu, label in DOMAINS:
+				f = Frozen(policy)
+				frozen[policy] = f
+				print("%s (%s), one thread on cpu%d:" % (policy, label, cpu))
+				for khz in f.freqs():
+					if ya_hecho("cpu", policy, khz):
+						print("  %7d kHz    (already measured, skipping)" % khz)
+						continue
+					f.set(khz)
+					p = burn(cpu, int(args.ventana) + 6)
+					time.sleep(3)                      # let the frequency settle
+					real = f.actual()
+					mw, sd, n = sample(args.ventana)
+					p.wait()
+					delta = mw - base
+					em = model.get((policy, khz), "")
+					factor = round(delta / em, 3) if em else ""
+
+					# A point is only worth fitting if its delta stands clear of
+					# the noise. The lowest OPPs add single-digit milliwatts, which
+					# is the same order as the gauge's own scatter -- in the dry
+					# run the A55 at 300 MHz came out at x0.183 against x0.30 for
+					# every other point, purely because 2.5 mW is not measurable
+					# against a 4.3 mA standard deviation. Averaging that in
+					# corrupts the factor for the whole domain, so it is flagged
+					# and left out of the summary rather than quietly used.
+					sem = (sd / (n ** 0.5)) if n else float("inf")
+					reliable = delta > 3 * sem
+					mark = "" if reliable else "  <- in the noise, discarded"
+					if real != khz:
+						mark = "  <- NOTE: ran at %d, not %d" % (real, khz)
+					print("  %7d kHz  %7.1f mW  delta %6.1f  modelo %6.1f  x%-6s%s"
+					      % (khz, mw, delta, em or 0, factor or "?", mark))
+					emit(["cpu", policy, khz, real, "", round(mw, 2), round(sd, 2), n,
+					      round(delta, 2), em, factor, int(reliable and real == khz),
+					      round(temperature_c(), 1)])
+				f.restore()
+				print()
+
+		# --- brightness ladder -------------------------------------------------
+		# CPU idle, so the only thing moving is the panel. The screen is the
+		# single biggest consumer on a phone and it is NOT attributable to any
+		# app, so it gets measured on its own and shown as its own entry.
+		pantalla = None
+		if args.solo != "cpu":
+			maxb = read_int(BACKLIGHT + "max_brightness")
+			print("Brightness (CPU idle). The delta is over the screen in black:")
+			puntos = []
+			for frac in (0.1, 0.25, 0.5, 0.75, 1.0):
+				level = int(maxb * frac)
+				if ya_hecho("brillo", brillo=level):
+					# The line needs all five points, so the one that was
+					# already there is re-read from the CSV instead of re-measured. Its delta is
+					# over ANOTHER baseline, and that is said out loud: mixing
+					# two sessions in one fit is exactly what makes it come out
+					# a believable and wrong number.
+					previo = None
+					with open(args.salida, newline="") as fcsv:
+						for r in csv.DictReader(fcsv):
+							if r.get("tipo") == "brillo" and r.get("brillo") == str(level):
+								previo = float(r["mw_delta"])
+					if previo is not None:
+						print("  %5d/%d  (already measured: delta %.1f, from another baseline)"
+						      % (level, maxb, previo))
+						puntos.append((frac, previo))
+						continue
+				write_root(BACKLIGHT + "brightness", level)
+				time.sleep(2)
+				mw, sd, n = sample(args.ventana)
+				print("  %5d/%d (%3.0f%%)  %7.1f mW  delta %6.1f"
+				      % (level, maxb, frac * 100, mw, mw - base))
+				emit(["brillo", "", "", "", level, round(mw, 2), round(sd, 2), n,
+				      round(mw - base, 2), "", "", 1, round(temperature_c(), 1)])
+				puntos.append((frac, mw - base))
+			write_root(BACKLIGHT + "brightness", 0)
+			time.sleep(2)
+
+			# Least-squares line over the five points, which is the
+			# model the daemon uses: base_mw + fraction * full_mw.
+			#
+			# base_mw is the y-intercept and is NOT zero: turning the panel on
+			# in black already costs something, and that cost does not depend on brightness.
+			# Forcing the line through the origin would spread it across the five points and
+			# a per-brightness draw higher than it really is would come out.
+			n = len(puntos)
+			sx = sum(f for f, _ in puntos)
+			sy = sum(d for _, d in puntos)
+			sxx = sum(f * f for f, _ in puntos)
+			sxy = sum(f * d for f, d in puntos)
+			den = n * sxx - sx * sx
+			if den:
+				full = (n * sxy - sx * sy) / den
+				b0 = (sy - full * sx) / n
+				# A panel whose minimum came out negative is noise, not physics.
+				pantalla = (max(0.0, b0), full)
+				print("  fit: %.1f mW in black + %.1f mW at maximum brightness"
+				      % (pantalla[0], pantalla[1]))
+			print()
+
+		# --- control ----------------------------------------------------------
+		# The same idle measurement again at the end. If this has drifted from
+		# the first one, the whole run is contaminated -- by heat, by something
+		# waking up, or by a charger someone plugged in halfway. Better to say so
+		# than to publish a calibration built on sand.
+		print("Control idle (%.0f s)..." % args.reposo)
+		base2, base2_sd, base2_n = sample(args.reposo)
+		drift = base2 - base
+		emit(["control", "", "", "", read(BACKLIGHT + "brightness"),
+		      round(base2, 2), round(base2_sd, 2), base2_n, round(drift, 2), "", "", 1,
+		      round(temperature_c(), 1)])
+		print("  idle = %.1f mW  (drift %+.1f mW)" % (base2, drift))
+
+		cpu_rows = [r for r in rows if r[0] == "cpu" and r[10] != "" and r[11] == 1]
+		descartados = len([r for r in rows if r[0] == "cpu"]) - len(cpu_rows)
+		print("\n--- summary ---")
+		if abs(drift) > 20:
+			print("  DRIFT OF %+.1f mW: the run is contaminated, repeat it." % drift)
+		for policy, _, label in DOMAINS:
+			fs = [r[10] for r in cpu_rows if r[1] == policy]
+			if fs:
+				print("  %s (%s): factor x%.3f on average, between x%.3f and x%.3f  (n=%d)"
+				      % (policy, label, statistics.mean(fs), min(fs), max(fs), len(fs)))
+			else:
+				print("  %s (%s): NO usable points." % (policy, label))
+		if descartados:
+			print("  %d point(s) discarded for falling within the noise." % descartados)
+
+		factores = {}
+		for policy, _, _label in DOMAINS:
+			fs = [r[10] for r in cpu_rows if r[1] == policy]
+			if fs:
+				factores[policy] = statistics.mean(fs)
+
+		print("\n  raw data:  %s" % args.salida)
+		if escribir_config(args.config, factores, pantalla, drift):
+			print("  calibration:   %s" % args.config)
+			print("\n  Restart the collector so it reads it:")
+			print("      systemctl --user restart app-usaged")
+
+	finally:
+		restore_all()
+		out.close()
+
+
+if __name__ == "__main__":
+	main()
