@@ -1,5 +1,5 @@
 [Unit]
-Description=Battery usage per application: el recolector
+Description=Battery usage per application: the collector
 Documentation=file:///usr/share/doc/app-usage/README.md
 
 [Service]
