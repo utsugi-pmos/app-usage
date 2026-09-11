@@ -37,7 +37,7 @@ int main(int argc, char **argv)
 	// draw. Being able to look at the thing is worth twenty lines.
 	QString grabTo;
 	for (int i = 1; i < argc - 1; ++i) {
-		if (QLatin1String(argv[i]) == QLatin1String("--captura"))
+		if (QLatin1String(argv[i]) == QLatin1String("--capture"))
 			grabTo = QString::fromLocal8Bit(argv[i + 1]);
 	}
 
@@ -99,7 +99,7 @@ int main(int argc, char **argv)
 		QTimer::singleShot(1200, &app, [window, grabTo]() {
 			const QImage shot = window->grabWindow();
 			if (shot.isNull() || !shot.save(grabTo)) {
-				qWarning("no pude write_it %s", qPrintable(grabTo));
+				qWarning("could not write %s", qPrintable(grabTo));
 				QCoreApplication::exit(1);
 				return;
 			}

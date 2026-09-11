@@ -49,7 +49,7 @@ int main(int argc, char **argv)
 	bool force = false;
 	for (int i = 1; i < argc; ++i) {
 		const QString arg = QString::fromLatin1(argv[i]);
-		if (arg == QLatin1String("--forzar"))
+		if (arg == QLatin1String("--force") || arg == QLatin1String("--forzar"))
 			force = true;
 		else
 			seconds = arg.toInt();
@@ -112,7 +112,7 @@ int main(int argc, char **argv)
 	std::printf("\n--- the split ------------------------------------------\n");
 	if (force && !(s1.onBattery && s2.onBattery)) {
 		s1.onBattery = s2.onBattery = true;
-		std::printf("  (--forzar: the millijoules below are WORTHLESS, only the split matters)\n");
+		std::printf("  (--force: the millijoules below are WORTHLESS, only the split matters)\n");
 	}
 	IntervalResult r;
 	if (!c.attribute(s1, a1, s2, a2, &r)) {

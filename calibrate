@@ -339,7 +339,7 @@ def burn(cpu, seconds):
 		stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
-def write_config(path, factores, screen, drift):
+def write_config(path, factors, screen, drift):
 	"""The calibration, in the format the daemon reads.
 
 	Only the sections this run actually measured are written. A pass with
@@ -365,12 +365,12 @@ def write_config(path, factores, screen, drift):
 		      " run is contaminated." % drift)
 		return False
 
-	if factores:
+	if factors:
 		if not c.has_section("cpu"):
 			c.add_section("cpu")
-		for policy, valor in factores.items():
+		for policy, value in factors.items():
 			key = "a55_factor" if policy == "policy0" else "a76_factor"
-			c.set("cpu", key, "%.4f" % valor)
+			c.set("cpu", key, "%.4f" % value)
 	if screen:
 		if not c.has_section("screen"):
 			c.add_section("screen")
@@ -400,7 +400,7 @@ def main():
 
 	ap = argparse.ArgumentParser(
 		description="Measures real power per frequency point and per brightness level.")
-	ap.add_argument("--output", default=os.path.expanduser("~/calibration-bateria.csv"))
+	ap.add_argument("--output", default=os.path.expanduser("~/calibration-battery.csv"))
 	# THE FILE THAT REALLY MATTERS. The CSV is the raw data, useful for
 	# looking point by point if a setting came out odd; but the daemon does not read CSV,
 	# it reads this INI. Without writing it, calibrating was an exercise with no effect:
@@ -410,7 +410,7 @@ def main():
 		help="where the calibration the daemon reads is written")
 	ap.add_argument("--window", type=float, default=30.0,
 	                help="seconds per point (30 gives ~1.9 mW resolution)")
-	ap.add_argument("--reposo", type=float, default=45.0,
+	ap.add_argument("--baseline", "--reposo", dest="baseline", type=float, default=45.0,
 	                help="seconds of baseline, best measured longer")
 	# --only replaced --solo, and "brightness" replaced "brillo"; both old
 	# spellings still work, because they are in the README and in the notes.
@@ -425,11 +425,11 @@ def main():
 	                     "pinned. It is checked, not assumed")
 	args = ap.parse_args()
 
-	# "brightness" is the name to type; "brillo" is what goes in the csv and what
-	# the daemon reads, so it stays as the internal value -- changing it would make
-	# every calibration already on disk unreadable.
-	if args.only == "brightness":
-		args.only = "brillo"
+	# One internal spelling from here on. The daemon is not involved: it reads
+	# calibration.ini, whose keys were always English. This CSV is read back by
+	# --resume and by nothing else, and that path takes both spellings.
+	if args.only == "brillo":
+		args.only = "brightness"
 
 	guard_unplugged(allow_plugged=args.plugged)
 
@@ -481,27 +481,33 @@ def main():
 	# session, with another temperature and another phone state, and all the points
 	# are deltas over it. Reusing it would mix two experiments.
 	rows = []
-	hechos = set()
+	done = set()
 	if args.resume and os.path.exists(args.output):
 		with open(args.output, newline="") as f:
 			for r in csv.DictReader(f):
-				if r.get("tipo") in ("cpu", "brillo", "brightness"):
-					hechos.add((r["tipo"], r.get("dominio", ""), r.get("khz_pedido", ""),
-					            r.get("brillo", "")))
-		print("Resuming: %d points already measured in %s" % (len(hechos), args.output))
+				# A CSV written before the rename has the Spanish header;
+				# resuming one of those has to keep working, so every column
+				# is looked up under both names.
+				kind = r.get("kind", r.get("tipo"))
+				if kind in ("cpu", "brillo", "brightness"):
+					done.add((kind if kind != "brillo" else "brightness",
+					          r.get("domain", r.get("dominio", "")),
+					          r.get("khz_asked", r.get("khz_pedido", "")),
+					          r.get("brightness", r.get("brillo", ""))))
+		print("Resuming: %d points already measured in %s" % (len(done), args.output))
 		print("  (the baseline is re-measured: the previous one is from another session)")
 
-	modo = "a" if (args.resume and os.path.exists(args.output)) else "w"
-	out = open(args.output, modo, newline="")
+	mode = "a" if (args.resume and os.path.exists(args.output)) else "w"
+	out = open(args.output, mode, newline="")
 	w = csv.writer(out)
-	if modo == "w":
-		w.writerow(["tipo", "dominio", "khz_pedido", "khz_real", "brillo",
-		            "mw_medido", "mw_sd", "muestras", "mw_delta", "mw_modelo",
-		            "factor", "fiable", "temp_c"])
+	if mode == "w":
+		w.writerow(["kind", "domain", "khz_asked", "khz_real", "brightness",
+		            "mw_measured", "mw_sd", "samples", "mw_delta", "mw_model",
+		            "factor", "reliable", "temp_c"])
 		out.flush()
 
-	def ya_hecho(tipo, dominio="", khz="", brillo=""):
-		return (tipo, str(dominio), str(khz), str(brillo)) in hechos
+	def already_done(kind, domain="", khz="", brightness=""):
+		return (kind, str(domain), str(khz), str(brightness)) in done
 
 	def emit(row):
 		rows.append(row)
@@ -529,34 +535,34 @@ def main():
 		print("Checking that the draw is steady...")
 		a, a_sd, _ = sample(8)
 		b, b_sd, _ = sample(8)
-		deriva = b - a
-		print("  %.1f mW -> %.1f mW  (deriva %+.1f, sd %.1f/%.1f)"
-		      % (a, b, deriva, a_sd, b_sd))
-		if abs(deriva) > 25:
+		drift_mw = b - a
+		print("  %.1f mW -> %.1f mW  (drift_mw %+.1f, sd %.1f/%.1f)"
+		      % (a, b, drift_mw, a_sd, b_sd))
+		if abs(drift_mw) > 25:
 			sys.exit(
 				"The draw moves on its own (%+.1f mW in 16 s). Every measurement would be\n"
 				"a delta over a baseline that will not hold still.\n"
 				"Wait for the phone to settle -- freshly booted it takes a few\n"
-				"minutes -- and launch it again. With --continuar you lose nothing."
-				% deriva)
+				"minutes -- and launch it again. With --resume you lose nothing."
+				% drift_mw)
 		print("  steady, continuing.\n")
 
 		print("Baseline with the backlight at 0 (%.0f s, do not touch the phone)..."
-		      % args.reposo)
-		base, base_sd, base_n = sample(args.reposo)
+		      % args.baseline)
+		base, base_sd, base_n = sample(args.baseline)
 		print("  idle = %.1f mW (sd %.1f, n=%d)\n" % (base, base_sd, base_n))
-		emit(["reposo", "", "", "", read(BACKLIGHT + "brightness"),
+		emit(["baseline", "", "", "", read(BACKLIGHT + "brightness"),
 		      round(base, 2), round(base_sd, 2), base_n, 0, "", "", 1,
 		      round(temperature_c(), 1)])
 
 		# --- one point per CPU operating point ---------------------------------
-		if args.only != "brillo":
+		if args.only != "brightness":
 			for policy, cpu, label in DOMAINS:
 				f = Frozen(policy)
 				frozen[policy] = f
 				print("%s (%s), one thread on cpu%d:" % (policy, label, cpu))
 				for khz in f.freqs():
-					if ya_hecho("cpu", policy, khz):
+					if already_done("cpu", policy, khz):
 						print("  %7d kHz    (already measured, skipping)" % khz)
 						continue
 					f.set(khz)
@@ -582,7 +588,7 @@ def main():
 					mark = "" if reliable else "  <- in the noise, discarded"
 					if real != khz:
 						mark = "  <- NOTE: ran at %d, not %d" % (real, khz)
-					print("  %7d kHz  %7.1f mW  delta %6.1f  modelo %6.1f  x%-6s%s"
+					print("  %7d kHz  %7.1f mW  delta %6.1f  model %6.1f  x%-6s%s"
 					      % (khz, mw, delta, em or 0, factor or "?", mark))
 					emit(["cpu", policy, khz, real, "", round(mw, 2), round(sd, 2), n,
 					      round(delta, 2), em, factor, int(reliable and real == khz),
@@ -598,33 +604,35 @@ def main():
 		if args.only != "cpu":
 			maxb = read_int(BACKLIGHT + "max_brightness")
 			print("Brightness (CPU idle). The delta is over the screen in black:")
-			puntos = []
+			points = []
 			for frac in (0.1, 0.25, 0.5, 0.75, 1.0):
 				level = int(maxb * frac)
-				if ya_hecho("brillo", brillo=level):
+				if already_done("brightness", brightness=level):
 					# The line needs all five points, so the one that was
 					# already there is re-read from the CSV instead of re-measured. Its delta is
 					# over ANOTHER baseline, and that is said out loud: mixing
 					# two sessions in one fit is exactly what makes it come out
 					# a believable and wrong number.
-					previo = None
+					previous = None
 					with open(args.output, newline="") as fcsv:
 						for r in csv.DictReader(fcsv):
-							if r.get("tipo") == "brillo" and r.get("brillo") == str(level):
-								previo = float(r["mw_delta"])
-					if previo is not None:
+							kind = r.get("kind", r.get("tipo"))
+							bright = r.get("brightness", r.get("brillo"))
+							if kind in ("brightness", "brillo") and bright == str(level):
+								previous = float(r["mw_delta"])
+					if previous is not None:
 						print("  %5d/%d  (already measured: delta %.1f, from another baseline)"
-						      % (level, maxb, previo))
-						puntos.append((frac, previo))
+						      % (level, maxb, previous))
+						points.append((frac, previous))
 						continue
 				write_root(BACKLIGHT + "brightness", level)
 				time.sleep(2)
 				mw, sd, n = sample(args.window)
 				print("  %5d/%d (%3.0f%%)  %7.1f mW  delta %6.1f"
 				      % (level, maxb, frac * 100, mw, mw - base))
-				emit(["brillo", "", "", "", level, round(mw, 2), round(sd, 2), n,
+				emit(["brightness", "", "", "", level, round(mw, 2), round(sd, 2), n,
 				      round(mw - base, 2), "", "", 1, round(temperature_c(), 1)])
-				puntos.append((frac, mw - base))
+				points.append((frac, mw - base))
 			write_root(BACKLIGHT + "brightness", 0)
 			time.sleep(2)
 
@@ -635,11 +643,11 @@ def main():
 			# in black already costs something, and that cost does not depend on brightness.
 			# Forcing the line through the origin would spread it across the five points and
 			# a per-brightness draw higher than it really is would come out.
-			n = len(puntos)
-			sx = sum(f for f, _ in puntos)
-			sy = sum(d for _, d in puntos)
-			sxx = sum(f * f for f, _ in puntos)
-			sxy = sum(f * d for f, d in puntos)
+			n = len(points)
+			sx = sum(f for f, _ in points)
+			sy = sum(d for _, d in points)
+			sxx = sum(f * f for f, _ in points)
+			sxy = sum(f * d for f, d in points)
 			den = n * sxx - sx * sx
 			if den:
 				full = (n * sxy - sx * sy) / den
@@ -655,8 +663,8 @@ def main():
 		# the first one, the whole run is contaminated -- by heat, by something
 		# waking up, or by a charger someone plugged in halfway. Better to say so
 		# than to publish a calibration built on sand.
-		print("Control idle (%.0f s)..." % args.reposo)
-		base2, base2_sd, base2_n = sample(args.reposo)
+		print("Control idle (%.0f s)..." % args.baseline)
+		base2, base2_sd, base2_n = sample(args.baseline)
 		drift = base2 - base
 		emit(["control", "", "", "", read(BACKLIGHT + "brightness"),
 		      round(base2, 2), round(base2_sd, 2), base2_n, round(drift, 2), "", "", 1,
@@ -678,14 +686,14 @@ def main():
 		if discarded:
 			print("  %d point(s) discarded for falling within the noise." % discarded)
 
-		factores = {}
+		factors = {}
 		for policy, _, _label in DOMAINS:
 			fs = [r[10] for r in cpu_rows if r[1] == policy]
 			if fs:
-				factores[policy] = statistics.mean(fs)
+				factors[policy] = statistics.mean(fs)
 
 		print("\n  raw data:  %s" % args.output)
-		if write_config(args.config, factores, screen, drift):
+		if write_config(args.config, factors, screen, drift):
 			print("  calibration:   %s" % args.config)
 			print("\n  Restart the collector so it reads it:")
 			print("      systemctl --user restart app-usaged")

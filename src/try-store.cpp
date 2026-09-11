@@ -73,8 +73,8 @@ int main(int argc, char **argv)
 	// is a .tsv whose name does not parse as a date. The second is the one that
 	// matters -- the guard is QDate::isValid(), and without it a stray file in
 	// the state directory would be deleted for having the wrong extension.
-	write(dir, QStringLiteral("notas.txt"), "no me borres");
-	write(dir, QStringLiteral("calibration-vieja.tsv"), "no me borres");
+	write(dir, QStringLiteral("notes.txt"), "do not delete me");
+	write(dir, QStringLiteral("calibration-old.tsv"), "do not delete me");
 
 	Store store(tmp.path());
 	const int removed = store.purge(8);
@@ -89,14 +89,14 @@ int main(int argc, char **argv)
 	check(!dir.exists(QDate::currentDate().addDays(-9).toString(QStringLiteral("yyyy-MM-dd"))
 	                  + QStringLiteral(".tsv")),
 	      "deletes a day from 9 days ago");
-	check(dir.exists(QStringLiteral("notas.txt")), "does not touch a file that is not .tsv");
-	check(dir.exists(QStringLiteral("calibration-vieja.tsv")),
+	check(dir.exists(QStringLiteral("notes.txt")), "does not touch a file that is not .tsv");
+	check(dir.exists(QStringLiteral("calibration-old.tsv")),
 	      "does not touch a .tsv whose name is not a date");
 
 	// A retention of zero means "keep everything", not "delete everything". The
 	// difference is a user's whole history.
 	const int none = store.purge(0);
-	check(none == 0 && dir.exists(QStringLiteral("notas.txt")),
+	check(none == 0 && dir.exists(QStringLiteral("notes.txt")),
 	      "a retention of 0 deletes nothing");
 
 	// --- round trip ---------------------------------------------------------
@@ -161,14 +161,14 @@ int main(int argc, char **argv)
 	a.start = beforeMidnight.addSecs(-30);
 	a.end = beforeMidnight;
 	a.energyMj = 111.0;
-	a.perApp.insert(QStringLiteral("ayer"), 100.0);
+	a.perApp.insert(QStringLiteral("yesterday"), 100.0);
 	night.add(a);
 
 	IntervalResult b;
 	b.start = afterMidnight.addSecs(-30);
 	b.end = afterMidnight;
 	b.energyMj = 222.0;
-	b.perApp.insert(QStringLiteral("hoy"), 200.0);
+	b.perApp.insert(QStringLiteral("today"), 200.0);
 	night.add(b);
 
 	check(night.flush(), "flush two days at once");
@@ -189,9 +189,9 @@ int main(int argc, char **argv)
 		QFile f(nightDir.filePath(file));
 		return f.open(QIODevice::ReadOnly) && f.readAll().contains(needle);
 	};
-	check(contains(fileYesterday, "ayer") && !contains(fileYesterday, "\thoy\t"),
+	check(contains(fileYesterday, "yesterday") && !contains(fileYesterday, "\ttoday\t"),
 	      "yesterday's file carries only yesterday's rows");
-	check(contains(fileToday, "hoy") && !contains(fileToday, "\tayer\t"),
+	check(contains(fileToday, "today") && !contains(fileToday, "\tyesterday\t"),
 	      "today's file carries only today's rows");
 
 	// And a reader spanning both gets everything: this is what the 7-day period
