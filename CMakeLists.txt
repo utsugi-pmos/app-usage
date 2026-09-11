@@ -16,7 +16,7 @@
 # to be cheap the biggest resident on the list it prints.
 
 cmake_minimum_required(VERSION 3.20)
-project(app-usage VERSION 1.0 LANGUAGES CXX)
+project(app-usage VERSION 1.1 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -63,7 +63,7 @@ if(LRELEASE)
 		list(APPEND QM_FILES ${qm})
 	endforeach()
 else()
-	message(WARNING "lrelease no encontrado: la interfaz saldra solo en ingles")
+	message(WARNING "lrelease not found: the interface will only come out in English")
 endif()
 
 # --- the screen --------------------------------------------------------------
