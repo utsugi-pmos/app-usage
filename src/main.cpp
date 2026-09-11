@@ -67,7 +67,7 @@ int runDaemon(const QString &dir, int periodSec, int flushSec, int keepDays, boo
 		             "app-usaged: calibration %s. The order between applications is\n"
 		             "         still correct -- the factors cancel out in the\n"
 		             "         proportional split -- but %s\n"
-		             "         Try: app-usage-calibrate --solo brillo  (3 min, unplugged)\n",
+		             "         Try: app-usage-calibrate --only brightness  (3 min, unplugged)\n",
 		             cal.any() ? "incomplete" : "absent",
 		             !cal.screenKnown && !cal.cpuKnown
 		                 ? "there will be no screen row and \"system\" will come out zero."
@@ -272,10 +272,10 @@ int runReport(const QString &dir, const QString &period)
 		// daemon only records while unplugged, so an hour in the store may carry
 		// only four minutes of measurement inside it, and saying "1 h" would take
 		// for granted a sampling fifteen times larger than there actually was.
-		const double segundos = elapsedMs / 1000.0;
-		if (segundos > 0)
+		const double seconds = elapsedMs / 1000.0;
+		if (seconds > 0)
 			std::printf("\n  %s measured, %.0f mW average\n",
-			            qPrintable(duration(segundos)), measured / segundos);
+			            qPrintable(duration(seconds)), measured / seconds);
 		std::printf("  the model attributes %.2f J to %.0f s of application CPU,\n"
 		            "  against %.2f J real: %+.0f %%\n",
 		            modelled / 1000.0, double(appCpu) / 1e6, measured / 1000.0,
@@ -302,23 +302,23 @@ int main(int argc, char **argv)
 	p.setApplicationDescription(
 	    "Splits the energy that leaves the battery between the applications.");
 	p.addHelpOption();
-	QCommandLineOption daemonOpt(QStringList() << QStringLiteral("demonio"),
+	QCommandLineOption daemonOpt(QStringList() << QStringLiteral("daemon") << QStringLiteral("demonio"),
 	                             "sample and save, without exiting");
-	QCommandLineOption reportOpt(QStringList() << QStringLiteral("informe"),
+	QCommandLineOption reportOpt(QStringList() << QStringLiteral("report") << QStringLiteral("informe"),
 	                             "print what is stored");
-	QCommandLineOption periodOpt(QStringList() << QStringLiteral("periodo"),
+	QCommandLineOption periodOpt(QStringList() << QStringLiteral("period") << QStringLiteral("periodo"),
 	                             "1h, 24h or 7d (default 24h)", "period",
 	                             QStringLiteral("24h"));
-	QCommandLineOption everyOpt(QStringList() << QStringLiteral("cada"),
+	QCommandLineOption everyOpt(QStringList() << QStringLiteral("every") << QStringLiteral("cada"),
 	                            "seconds between sweeps (default 30)", "sec",
 	                            QStringLiteral("30"));
-	QCommandLineOption keepOpt(QStringList() << QStringLiteral("dias"),
+	QCommandLineOption keepOpt(QStringList() << QStringLiteral("days") << QStringLiteral("dias"),
 	                           "retention days (default 8)", "days",
 	                           QStringLiteral("8"));
-	QCommandLineOption flushOpt(QStringList() << QStringLiteral("vaciar-cada"),
+	QCommandLineOption flushOpt(QStringList() << QStringLiteral("flush-every") << QStringLiteral("vaciar-cada"),
 	                            "seconds between writes to disk (default 300)",
 	                            "sec", QStringLiteral("300"));
-	QCommandLineOption forceOpt(QStringList() << QStringLiteral("forzar"),
+	QCommandLineOption forceOpt(QStringList() << QStringLiteral("force") << QStringLiteral("forzar"),
 	                            "save even with a charger attached. For testing only, "
 	                            "and requires --state: the joules are worthless");
 	QCommandLineOption stateOpt(QStringList() << QStringLiteral("state"),
@@ -344,15 +344,15 @@ int main(int argc, char **argv)
 	// makes that impossible rather than merely discouraged.
 	if (p.isSet(forceOpt) && !p.isSet(stateOpt)) {
 		std::fprintf(stderr,
-		             "--forzar needs --state <dir>.\n"
+		             "--force needs --state <dir>.\n"
 		             "\n"
 		             "It forces intervals measured WITH a charger, where the battery\n"
 		             "barely circulates and the joules mean nothing. Writing them\n"
 		             "into the real store contaminates it without anyone noticing:\n"
 		             "the numbers come out, and they are a lie.\n"
 		             "\n"
-		             "  app-usaged --demonio --forzar --state /tmp/test\n"
-		             "  app-usaged --informe --state /tmp/test\n");
+		             "  app-usaged --daemon --force --state /tmp/test\n"
+		             "  app-usaged --report --state /tmp/test\n");
 		return 2;
 	}
 
@@ -362,6 +362,6 @@ int main(int argc, char **argv)
 		return runDaemon(dir, p.value(everyOpt).toInt(), p.value(flushOpt).toInt(),
 		                 p.value(keepOpt).toInt(), p.isSet(forceOpt));
 
-	std::fprintf(stderr, "Use --demonio or --informe. --help for the rest.\n");
+	std::fprintf(stderr, "Use --daemon or --report. --help for the rest.\n");
 	return 2;
 }

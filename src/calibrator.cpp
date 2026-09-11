@@ -193,7 +193,7 @@ bool Calibrator::start()
 	Q_EMIT runningChanged();
 	Q_EMIT stateChanged();
 
-	m_process->start(program, {QStringLiteral("--solo"), QStringLiteral("brillo")});
+	m_process->start(program, {QStringLiteral("--only"), QStringLiteral("brightness")});
 	return true;
 }
 
