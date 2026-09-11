@@ -12,7 +12,7 @@
 // every id resolves to Background and the drawer half of the list fails, which
 // is a correct answer to a question that was not asked; the exit code says so.
 //
-//   ./probar-appinfo
+//   ./try-appinfo
 
 #include "appinfo.h"
 

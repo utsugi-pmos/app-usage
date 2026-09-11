@@ -2,7 +2,7 @@
 //
 // Every colour and measurement of the battery screen, in one file.
 //
-// It is called Tinta and NOT Palette, and that is not a style choice: QtQuick
+// It is called Ink and NOT Palette, and that is not a style choice: QtQuick
 // has had its own `Palette` value type since 6.6, so `import QtQuick` brings
 // one into scope and it wins. The symptom is not a name clash error, it is a
 // screenful of "Unable to assign [undefined]" because every property was read

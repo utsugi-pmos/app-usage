@@ -6,7 +6,7 @@
 #
 #   ssh surya
 #   cmake -S . -B build && cmake --build build -j4
-#   ./build/probar-collector 10       # what the sampler actually reads
+#   ./build/try-collector 10       # what the sampler actually reads
 #   ./build/app-usaged --informe      # the list, without a compositor
 #   ./build/app-usage                 # the screen
 #
@@ -16,7 +16,7 @@
 # to be cheap the biggest resident on the list it prints.
 
 cmake_minimum_required(VERSION 3.20)
-project(app-usage VERSION 1.1 LANGUAGES CXX)
+project(app-usage VERSION 1.2 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -92,12 +92,12 @@ if(QM_FILES)
 		FILES ${QM_FILES})
 endif()
 
-# Tinta and Format are singletons and CMake has to be told, or the module
-# registers them as ordinary types and every `Tinta.ink` in the QML is silently
-# undefined. Tinta is NOT called Palette: QtQuick has owned that name since 6.6
+# Ink and Format are singletons and CMake has to be told, or the module
+# registers them as ordinary types and every `Ink.ink` in the QML is silently
+# undefined. Ink is NOT called Palette: QtQuick has owned that name since 6.6
 # and would win the lookup, turning the whole screen into "Unable to assign
 # [undefined]".
-set_source_files_properties(Tinta.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
+set_source_files_properties(Ink.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 set_source_files_properties(Format.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 
 qt_add_qml_module(app-usage
@@ -106,7 +106,7 @@ qt_add_qml_module(app-usage
 	QML_FILES
 		main.qml
 		AppsPage.qml
-		Tinta.qml
+		Ink.qml
 		Format.qml
 )
 
@@ -120,19 +120,19 @@ qt_add_qml_module(app-usage
 # four -- was a silent wrong answer, not a compiler error.
 option(APP_USAGE_DIAGNOSTICOS "Construir los arneses de diagnostico" ON)
 if(APP_USAGE_DIAGNOSTICOS)
-	add_executable(probar-collector src/probar-collector.cpp)
-	target_link_libraries(probar-collector PRIVATE app-usage-collector)
+	add_executable(try-collector src/try-collector.cpp)
+	target_link_libraries(try-collector PRIVATE app-usage-collector)
 
 	# Checks the drawer/background split against units read off this phone's
 	# live cgroups. Needs the phone's own .desktop files, so it exits 77
 	# (skipped) anywhere else rather than reporting a failure it cannot judge.
-	add_executable(probar-appinfo src/probar-appinfo.cpp)
-	target_link_libraries(probar-appinfo PRIVATE app-usage-collector)
+	add_executable(try-appinfo src/try-appinfo.cpp)
+	target_link_libraries(try-appinfo PRIVATE app-usage-collector)
 
 	# The store, and above all purge(): the only function here that deletes the
 	# user's data. Builds its own directory in /tmp, so it runs anywhere.
-	add_executable(probar-store src/probar-store.cpp)
-	target_link_libraries(probar-store PRIVATE app-usage-collector)
+	add_executable(try-store src/try-store.cpp)
+	target_link_libraries(try-store PRIVATE app-usage-collector)
 endif()
 
 # --- install -----------------------------------------------------------------
@@ -142,10 +142,10 @@ install(TARGETS app-usaged app-usage
 # Phase 0. Without it an installed system could never produce the calibration
 # the daemon reads, so the screen and system rows could never appear and the
 # "not calibrated" note would be permanent. Renamed on the way in because
-# `calibrar` alone says nothing about what it calibrates.
-install(PROGRAMS calibrar
+# `calibrate` alone says nothing about what it calibrates.
+install(PROGRAMS calibrate
 	DESTINATION ${CMAKE_INSTALL_BINDIR}
-	RENAME app-usage-calibrar)
+	RENAME app-usage-calibrate)
 
 install(FILES app-usage.desktop
 	DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)

@@ -11,7 +11,7 @@
 // Runs anywhere -- it builds its own directory in /tmp and never looks at the
 // real store.
 //
-//   ./probar-store
+//   ./try-store
 
 #include "store.h"
 
@@ -74,7 +74,7 @@ int main(int argc, char **argv)
 	// matters -- the guard is QDate::isValid(), and without it a stray file in
 	// the state directory would be deleted for having the wrong extension.
 	write(dir, QStringLiteral("notas.txt"), "no me borres");
-	write(dir, QStringLiteral("calibracion-vieja.tsv"), "no me borres");
+	write(dir, QStringLiteral("calibration-vieja.tsv"), "no me borres");
 
 	Store store(tmp.path());
 	const int removed = store.purge(8);
@@ -90,7 +90,7 @@ int main(int argc, char **argv)
 	                  + QStringLiteral(".tsv")),
 	      "deletes a day from 9 days ago");
 	check(dir.exists(QStringLiteral("notas.txt")), "does not touch a file that is not .tsv");
-	check(dir.exists(QStringLiteral("calibracion-vieja.tsv")),
+	check(dir.exists(QStringLiteral("calibration-vieja.tsv")),
 	      "does not touch a .tsv whose name is not a date");
 
 	// A retention of zero means "keep everything", not "delete everything". The

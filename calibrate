@@ -254,13 +254,13 @@ def guard_unplugged(allow_plugged=False):
 	# It does not abort: with a full cell there is plenty of margin and forbidding
 	# it would be overkill. But it is said, because whoever runs it blind deserves to know.
 	try:
-		capacidad = read_int(QG + "capacity")
+		capacity = read_int(QG + "capacity")
 	except (OSError, ValueError):
-		capacidad = 100
+		capacity = 100
 	print("  NOTE: the input is at its limit, meaning the phone is already drawing on the")
 	print("  cell. This run adds load on top and the PMIC may cut out cold")
-	print("  (see BOOT-03). Battery at %d%%." % capacidad)
-	if capacidad < 50:
+	print("  (see BOOT-03). Battery at %d%%." % capacity)
+	if capacity < 50:
 		print("  Below 50%% the risk is real: better unplug or charge first.")
 	print()
 
@@ -339,11 +339,11 @@ def burn(cpu, seconds):
 		stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
-def escribir_config(ruta, factores, pantalla, drift):
+def write_config(path, factores, screen, drift):
 	"""The calibration, in the format the daemon reads.
 
 	Only the sections this run actually measured are written. A pass with
-	'--solo brillo' leaves the [cpu] section out, and the daemon tells the
+	'--only brightness' leaves the [cpu] section out, and the daemon tells the
 	difference: without CPU factors it does not apply the sharing cap, because
 	capping it with the unscaled milliwatts from the device tree would measure
 	the missing calibration instead of the missing model.
@@ -354,9 +354,9 @@ def escribir_config(ruta, factores, pantalla, drift):
 	import configparser
 	c = configparser.RawConfigParser()
 	c.optionxform = str
-	if os.path.exists(ruta):
+	if os.path.exists(path):
 		try:
-			c.read(ruta, encoding="utf-8")
+			c.read(path, encoding="utf-8")
 		except Exception:
 			pass
 
@@ -369,16 +369,16 @@ def escribir_config(ruta, factores, pantalla, drift):
 		if not c.has_section("cpu"):
 			c.add_section("cpu")
 		for policy, valor in factores.items():
-			clave = "a55_factor" if policy == "policy0" else "a76_factor"
-			c.set("cpu", clave, "%.4f" % valor)
-	if pantalla:
+			key = "a55_factor" if policy == "policy0" else "a76_factor"
+			c.set("cpu", key, "%.4f" % valor)
+	if screen:
 		if not c.has_section("screen"):
 			c.add_section("screen")
-		c.set("screen", "base_mw", "%.1f" % pantalla[0])
-		c.set("screen", "full_mw", "%.1f" % pantalla[1])
+		c.set("screen", "base_mw", "%.1f" % screen[0])
+		c.set("screen", "full_mw", "%.1f" % screen[1])
 
-	os.makedirs(os.path.dirname(ruta), exist_ok=True)
-	with open(ruta, "w", encoding="utf-8") as f:
+	os.makedirs(os.path.dirname(path), exist_ok=True)
+	with open(path, "w", encoding="utf-8") as f:
 		c.write(f)
 	return True
 
@@ -400,28 +400,38 @@ def main():
 
 	ap = argparse.ArgumentParser(
 		description="Measures real power per frequency point and per brightness level.")
-	ap.add_argument("--salida", default=os.path.expanduser("~/calibracion-bateria.csv"))
+	ap.add_argument("--output", default=os.path.expanduser("~/calibration-bateria.csv"))
 	# THE FILE THAT REALLY MATTERS. The CSV is the raw data, useful for
 	# looking point by point if a setting came out odd; but the daemon does not read CSV,
 	# it reads this INI. Without writing it, calibrating was an exercise with no effect:
 	# everything was measured and the sharing stayed without a screen row forever.
 	ap.add_argument("--config", default=os.path.expanduser(
-		"~/.config/app-usage/calibracion.ini"),
+		"~/.config/app-usage/calibration.ini"),
 		help="where the calibration the daemon reads is written")
-	ap.add_argument("--ventana", type=float, default=30.0,
+	ap.add_argument("--window", type=float, default=30.0,
 	                help="seconds per point (30 gives ~1.9 mW resolution)")
 	ap.add_argument("--reposo", type=float, default=45.0,
 	                help="seconds of baseline, best measured longer")
-	ap.add_argument("--solo", choices=["cpu", "brillo"], help="measure only one part")
-	ap.add_argument("--continuar", action="store_true",
+	# --only replaced --solo, and "brightness" replaced "brillo"; both old
+	# spellings still work, because they are in the README and in the notes.
+	ap.add_argument("--only", "--solo", dest="only",
+	                choices=["cpu", "brightness", "brillo"],
+	                help="measure only one part")
+	ap.add_argument("--resume", "--continuar", dest="resume", action="store_true",
 	                help="resume: keeps the points already in the CSV "
 	                     "and measures only the missing ones")
-	ap.add_argument("--con-cable", action="store_true",
+	ap.add_argument("--plugged", "--con-cable", dest="plugged", action="store_true",
 	                help="allow measuring with USB plugged in, if the input is "
 	                     "pinned. It is checked, not assumed")
 	args = ap.parse_args()
 
-	guard_unplugged(allow_plugged=args.con_cable)
+	# "brightness" is the name to type; "brillo" is what goes in the csv and what
+	# the daemon reads, so it stays as the internal value -- changing it would make
+	# every calibration already on disk unreadable.
+	if args.only == "brightness":
+		args.only = "brillo"
+
+	guard_unplugged(allow_plugged=args.plugged)
 
 	model = energy_model()
 	if not model:
@@ -472,17 +482,17 @@ def main():
 	# are deltas over it. Reusing it would mix two experiments.
 	rows = []
 	hechos = set()
-	if args.continuar and os.path.exists(args.salida):
-		with open(args.salida, newline="") as f:
+	if args.resume and os.path.exists(args.output):
+		with open(args.output, newline="") as f:
 			for r in csv.DictReader(f):
-				if r.get("tipo") in ("cpu", "brillo"):
+				if r.get("tipo") in ("cpu", "brillo", "brightness"):
 					hechos.add((r["tipo"], r.get("dominio", ""), r.get("khz_pedido", ""),
 					            r.get("brillo", "")))
-		print("Resuming: %d points already measured in %s" % (len(hechos), args.salida))
+		print("Resuming: %d points already measured in %s" % (len(hechos), args.output))
 		print("  (the baseline is re-measured: the previous one is from another session)")
 
-	modo = "a" if (args.continuar and os.path.exists(args.salida)) else "w"
-	out = open(args.salida, modo, newline="")
+	modo = "a" if (args.resume and os.path.exists(args.output)) else "w"
+	out = open(args.output, modo, newline="")
 	w = csv.writer(out)
 	if modo == "w":
 		w.writerow(["tipo", "dominio", "khz_pedido", "khz_real", "brillo",
@@ -499,7 +509,7 @@ def main():
 		out.flush()          # unplugged over wifi: never buffer a result
 
 	try:
-		print("Calibrating. Output: %s" % args.salida)
+		print("Calibrating. Output: %s" % args.output)
 		print("Battery at %s%%, %.2f V\n" % (read(QG + "capacity"),
 		                                    read_int(QG + "voltage_now") / 1e6))
 
@@ -540,7 +550,7 @@ def main():
 		      round(temperature_c(), 1)])
 
 		# --- one point per CPU operating point ---------------------------------
-		if args.solo != "brillo":
+		if args.only != "brillo":
 			for policy, cpu, label in DOMAINS:
 				f = Frozen(policy)
 				frozen[policy] = f
@@ -550,10 +560,10 @@ def main():
 						print("  %7d kHz    (already measured, skipping)" % khz)
 						continue
 					f.set(khz)
-					p = burn(cpu, int(args.ventana) + 6)
+					p = burn(cpu, int(args.window) + 6)
 					time.sleep(3)                      # let the frequency settle
 					real = f.actual()
-					mw, sd, n = sample(args.ventana)
+					mw, sd, n = sample(args.window)
 					p.wait()
 					delta = mw - base
 					em = model.get((policy, khz), "")
@@ -584,8 +594,8 @@ def main():
 		# CPU idle, so the only thing moving is the panel. The screen is the
 		# single biggest consumer on a phone and it is NOT attributable to any
 		# app, so it gets measured on its own and shown as its own entry.
-		pantalla = None
-		if args.solo != "cpu":
+		screen = None
+		if args.only != "cpu":
 			maxb = read_int(BACKLIGHT + "max_brightness")
 			print("Brightness (CPU idle). The delta is over the screen in black:")
 			puntos = []
@@ -598,7 +608,7 @@ def main():
 					# two sessions in one fit is exactly what makes it come out
 					# a believable and wrong number.
 					previo = None
-					with open(args.salida, newline="") as fcsv:
+					with open(args.output, newline="") as fcsv:
 						for r in csv.DictReader(fcsv):
 							if r.get("tipo") == "brillo" and r.get("brillo") == str(level):
 								previo = float(r["mw_delta"])
@@ -609,7 +619,7 @@ def main():
 						continue
 				write_root(BACKLIGHT + "brightness", level)
 				time.sleep(2)
-				mw, sd, n = sample(args.ventana)
+				mw, sd, n = sample(args.window)
 				print("  %5d/%d (%3.0f%%)  %7.1f mW  delta %6.1f"
 				      % (level, maxb, frac * 100, mw, mw - base))
 				emit(["brillo", "", "", "", level, round(mw, 2), round(sd, 2), n,
@@ -635,9 +645,9 @@ def main():
 				full = (n * sxy - sx * sy) / den
 				b0 = (sy - full * sx) / n
 				# A panel whose minimum came out negative is noise, not physics.
-				pantalla = (max(0.0, b0), full)
+				screen = (max(0.0, b0), full)
 				print("  fit: %.1f mW in black + %.1f mW at maximum brightness"
-				      % (pantalla[0], pantalla[1]))
+				      % (screen[0], screen[1]))
 			print()
 
 		# --- control ----------------------------------------------------------
@@ -654,7 +664,7 @@ def main():
 		print("  idle = %.1f mW  (drift %+.1f mW)" % (base2, drift))
 
 		cpu_rows = [r for r in rows if r[0] == "cpu" and r[10] != "" and r[11] == 1]
-		descartados = len([r for r in rows if r[0] == "cpu"]) - len(cpu_rows)
+		discarded = len([r for r in rows if r[0] == "cpu"]) - len(cpu_rows)
 		print("\n--- summary ---")
 		if abs(drift) > 20:
 			print("  DRIFT OF %+.1f mW: the run is contaminated, repeat it." % drift)
@@ -665,8 +675,8 @@ def main():
 				      % (policy, label, statistics.mean(fs), min(fs), max(fs), len(fs)))
 			else:
 				print("  %s (%s): NO usable points." % (policy, label))
-		if descartados:
-			print("  %d point(s) discarded for falling within the noise." % descartados)
+		if discarded:
+			print("  %d point(s) discarded for falling within the noise." % discarded)
 
 		factores = {}
 		for policy, _, _label in DOMAINS:
@@ -674,8 +684,8 @@ def main():
 			if fs:
 				factores[policy] = statistics.mean(fs)
 
-		print("\n  raw data:  %s" % args.salida)
-		if escribir_config(args.config, factores, pantalla, drift):
+		print("\n  raw data:  %s" % args.output)
+		if write_config(args.config, factores, screen, drift):
 			print("  calibration:   %s" % args.config)
 			print("\n  Restart the collector so it reads it:")
 			print("      systemctl --user restart app-usaged")

@@ -23,7 +23,7 @@
 
 int main(int argc, char **argv)
 {
-	// --captura <fichero>: draw one frame, write a PNG, exit.
+	// --captura <file>: draw one frame, write a PNG, exit.
 	//
 	// This exists because checking that the screen renders turned into a fight
 	// with the compositor. Spectacle is single-instance and D-Bus activated, so
@@ -99,7 +99,7 @@ int main(int argc, char **argv)
 		QTimer::singleShot(1200, &app, [window, grabTo]() {
 			const QImage shot = window->grabWindow();
 			if (shot.isNull() || !shot.save(grabTo)) {
-				qWarning("no pude escribir %s", qPrintable(grabTo));
+				qWarning("no pude write_it %s", qPrintable(grabTo));
 				QCoreApplication::exit(1);
 				return;
 			}

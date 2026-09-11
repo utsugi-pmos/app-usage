@@ -83,14 +83,14 @@ number decides whether phase 2 is needed, which is an eBPF program over
 
 | | |
 |---|---|
-| `calibrar` | Phase 0: measures the real power per frequency point and per brightness. **Done.** The real run is missing |
-| `probar-calibrar` | Exercises the whole `calibrar` against a fake sysfs, with no hardware. Passes **on the surya itself** |
+| `calibrate` | Phase 0: measures the real power per frequency point and per brightness. **Done.** The real run is missing |
+| `try-calibrate` | Exercises the whole `calibrate` against a fake sysfs, with no hardware. Passes **on the surya itself** |
 | `CMakeLists.txt` | Builds native on the phone, which is where the Qt6 is |
 | `app-usaged.service` | The user service |
 | `app-usage.desktop`, `app-usage.svg` | «Battery usage» in the launcher, and its colour icon |
 | `main.qml` | The window, with the link to the energy panel |
 | `AppsPage.qml` | The per-app list |
-| `Tinta.qml`, `Format.qml` | Common palette and formatting |
+| `Ink.qml`, `Format.qml` | Common palette and formatting |
 | `i18n/app-usage_es.ts` | Spanish translation |
 | `src/collector.{h,cpp}` | The sampling and the split |
 | `src/store.{h,cpp}` | Hourly aggregates in `~/.local/state/app-usage`, one file per day |
@@ -99,15 +99,15 @@ number decides whether phase 2 is needed, which is an eBPF program over
 | `src/usage.{h,cpp}` | The model the screen consumes |
 | `src/main.cpp` | The daemon and the report |
 | `src/ui.cpp` | The screen |
-| `src/probar-collector.cpp` | Two sweeps and the split, to see what it really reads |
-| `src/probar-appinfo.cpp` | That the drawer/background separation is right, against real units |
+| `src/try-collector.cpp` | Two sweeps and the split, to see what it really reads |
+| `src/try-appinfo.cpp` | That the drawer/background separation is right, against real units |
 
 Three names that are **not** free:
 
 - **`slots` cannot be used as a variable name.** It is a Qt macro that expands to
   nothing, so `QVector<QDateTime> starts(slots)` becomes `starts()`, a function
   declaration, and the compiler complains about everything but the cause.
-- The palette singleton is called `Tinta`, **not `Palette`**. QtQuick has its own
+- The palette singleton is called `Ink`, **not `Palette`**. QtQuick has its own
   `Palette` since 6.6, so `import QtQuick` brings it into scope and wins. The symptom
   is not a name clash: it is a whole screen of «Unable to assign [undefined]» because
   each property was read from the wrong type.
@@ -126,7 +126,7 @@ app-usage                                 # the screen
 app-usaged --informe --periodo 24h        # the same list, without a compositor
 ```
 
-⚠️ **`--forzar` requires `--estado <dir>`, on purpose.** It forces intervals measured
+⚠️ **`--forzar` requires `--state <dir>`, on purpose.** It forces intervals measured
 *with* the charger, where the battery barely flows and the joules mean nothing.
 Writing them to the real store leaves it contaminated without it showing —the numbers
 come out, and they are a lie—, which is exactly what happened here: 42.8 fake J that
@@ -134,8 +134,8 @@ had to be found and deleted by hand. Having the flag name its own directory make
 impossible instead of merely discouraged:
 
 ```sh
-app-usaged --demonio --forzar --estado /tmp/prueba
-app-usaged --informe --estado /tmp/prueba
+app-usaged --demonio --forzar --state /tmp/test
+app-usaged --informe --state /tmp/test
 ```
 
 They are **three binaries from a single library**, and the separation matters: the
@@ -145,7 +145,7 @@ resident precisely the thing that has to be cheap.
 
 ### Viewing the screen without a compositor
 
-`app-usage --captura fichero.png` draws one frame, saves it and exits. With
+`app-usage --captura file.png` draws one frame, saves it and exits. With
 `QT_QPA_PLATFORM=offscreen` it needs no compositor, no unlocked session, and no panel
 on:
 
@@ -179,8 +179,8 @@ day was phase 1's criterion, and it was not saved anywhere: it was incomputable.
 Three guards that exist because the three faults happened for real:
 
 ```sh
-app-usage-calibrar --solo brillo              # 4 min, unplugged
-app-usage-calibrar --solo brillo --continuar  # resumes if it was cut off
+app-usage-calibrate --solo brillo              # 4 min, unplugged
+app-usage-calibrate --solo brillo --continuar  # resumes if it was cut off
 ```
 
 **1 · Checks that consumption is steady BEFORE spending the run.** All the points are
@@ -207,11 +207,11 @@ from the cell, and this run adds load on top. See
 [BOOT-03](../../../docs/BOOT-03-current-deficit.md).
 
 
-⚠️ **Until 2026-08-28 the calibration did not reach the daemon.** `calibrar` wrote a
+⚠️ **Until 2026-08-28 the calibration did not reach the daemon.** `calibrate` wrote a
 CSV and the daemon read an INI, and **nothing joined the two**: you could measure
 everything and the «Screen» and «System» rows stayed empty forever. The CSV is the
 raw data, useful for looking point by point; the file that rules is
-`~/.config/app-usage/calibracion.ini`, and now `calibrar` writes it.
+`~/.config/app-usage/calibration.ini`, and now `calibrate` writes it.
 
 **The calibration is two halves and they are distinguished.** `Calibration` has
 `cpuKnown` and `screenKnown`, not a single `loaded`, because they are measured
@@ -229,12 +229,12 @@ missing instead of the model that is missing. That is why presence is detected b
 and has to be told apart from "measured and came out 1.0".
 
 The brightness half is in the app, in the button at the foot. It only appears
-unplugged, because plugged in `calibrar` refuses and it would be four minutes for
-nothing. The bar is moved by the clock and not by analysing `calibrar`'s output: its
+unplugged, because plugged in `calibrate` refuses and it would be four minutes for
+nothing. The bar is moved by the clock and not by analysing `calibrate`'s output: its
 progress lines are prose for a person, and turning them into a machine interface
 would freeze that prose as an API.
 
-And the process exiting with 0 is not enough: `calibrar` **refuses to write** if the
+And the process exiting with 0 is not enough: `calibrate` **refuses to write** if the
 control baseline drifted more than 20 mW, and exits with 0 having said so. Success is
 checked by looking at whether the file already has a screen section.
 
@@ -277,7 +277,7 @@ but that what comes out of the cell is *only the part the USB does not cover*, w
 the model estimates the **whole** consumption of the apps. The residue would come out
 biased by construction — and the residue is phase 1's deliverable.
 
-(For `calibrar` it does work, and that is why it has `--con-cable`: there everything is
+(For `calibrate` it does work, and that is why it has `--con-cable`: there everything is
 *deltas* over a baseline, and a constant contribution cancels out in each subtraction.)
 
 ### What it takes up
@@ -317,7 +317,7 @@ Follows the repository's pattern, just like `screenglaze`:
 ```sh
 surya/pmaports/sincronizar app-usage
 pmbootstrap build app-usage --arch aarch64
-APP_USAGE_APK=/ruta/a/app-usage-1.0-r0.apk surya-setup app-usage
+APP_USAGE_APK=/path/a/app-usage-1.0-r0.apk surya-setup app-usage
 ```
 
 ⚠️ **If you add a file it goes in THREE places**: the `sincronizar_app_usage()` list,
@@ -335,7 +335,7 @@ Two things about the `APKBUILD` that are not decoration:
   installed, so compiling them inside `abuild` would only cost time, and their sources
   do not even go in `source=`.
 
-`calibrar` is packaged, as `/usr/bin/app-usage-calibrar`: without it an installed
+`calibrate` is packaged, as `/usr/bin/app-usage-calibrate`: without it an installed
 system could never produce the calibration the daemon reads, and the «Screen» and
 «System» rows would be impossible forever.
 
@@ -346,7 +346,7 @@ application folders and no `NoDisplay`, no `Hidden`, and no `OnlyShowIn`/`NotSho
 that excludes KDE. Being literally the XDG criterion, it cannot disagree with what the
 drawer shows.
 
-Measured over the surya's 32 live units, and saved as a test in `probar-appinfo`:
+Measured over the surya's 32 live units, and saved as a test in `try-appinfo`:
 **Spectacle is the only one launched from the drawer**. The other two the rule accepts
 —Screenglaze and Battery— do have an entry even though what spends their CPU is a
 daemon. Left out, correctly, are the 3 with `NoDisplay=true`, the 9 with an
@@ -418,8 +418,8 @@ i.e. the target architecture and not a cross approximation:
 ```sh
 ssh surya
 cmake -S . -B build && cmake --build build -j4
-./build/probar-collector 10            # two sweeps 10 s apart
-./build/probar-collector 10 --forzar   # in addition, the split with the cable in
+./build/try-collector 10            # two sweeps 10 s apart
+./build/try-collector 10 --forzar   # in addition, the split with the cable in
 ```
 
 ⚠️ **Never read kernfs with `QTextStream`.** sysfs, procfs and cgroupfs do not give a
@@ -430,7 +430,7 @@ faults are silent. Use `QIODevice::readAll()`, which is the only one that reads
 incrementally when the size is unknown: that is what `collector.cpp`'s `readFile()` is
 for.
 
-### `calibrar`
+### `calibrate`
 
 It is run **with the phone unplugged**, and it refuses to start on its own if it
 detects a charger. It is not zeal: with the cable in the battery does not flow
@@ -438,8 +438,8 @@ detects a charger. It is not zeal: with the cable in the battery does not flow
 drifted 66 mW with a deviation of 119. The data are worth nothing.
 
 ```sh
-./calibrar --salida ~/calibracion.csv       # ~18 min
-./calibrar --solo cpu --ventana 10          # a quick pass
+./calibrate --output ~/calibration.csv       # ~18 min
+./calibrate --solo cpu --window 10          # a quick pass
 ```
 
 Three decisions that are not obvious:
@@ -472,14 +472,14 @@ And it measures idle **again at the end**. If it has drifted from the first, the
 contaminated —by heat, by something that woke up, by a cable— and it says so instead of
 publishing a calibration built on sand.
 
-### `probar-calibrar`
+### `try-calibrate`
 
 It sets up a fake `/sys` —gauge with the `qcom_qg`'s real noise, energy model with the
 surya's real curves, cpufreq with its two policies— and injects some known factors to
-check that `calibrar` recovers them.
+check that `calibrate` recovers them.
 
 ```sh
-./probar-calibrar     # ~40 s, no hardware
+./try-calibrate     # ~40 s, no hardware
 ```
 
 It checks that the governor and the brightness are left as they were, that the CSV
@@ -511,7 +511,7 @@ that samples, and not an app that reads its counters when it opens. An app that 
 closes between two samplings is invisible: it is the price of sampling, and the reason
 the period is 30 s.
 
-**Plugged in nothing can be measured.** It applies to `calibrar` and it applies to the
+**Plugged in nothing can be measured.** It applies to `calibrate` and it applies to the
 collector, which discards the whole interval if there was a charger at either of its two
 ends. It is the same thing already documented by
 [`tasks/015`](../../../tasks/015-battery-gauge.md): "plugged into the PC" is not

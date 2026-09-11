@@ -30,31 +30,31 @@ ApplicationWindow {
 	// A launcher entry whose name changes with the locale is one you
 	// cannot tell anyone to look for.
 	title: "Battery usage"
-	color: Tinta.background
+	color: Ink.background
 
 	header: Rectangle {
-		implicitHeight: headerRow.implicitHeight + 2 * Tinta.gap
-		color: Tinta.background
+		implicitHeight: headerRow.implicitHeight + 2 * Ink.gap
+		color: Ink.background
 
 		RowLayout {
 			id: headerRow
-			x: Tinta.gap
-			y: Tinta.gap
-			width: parent.width - 2 * Tinta.gap
-			spacing: Tinta.gap
+			x: Ink.gap
+			y: Ink.gap
+			width: parent.width - 2 * Ink.gap
+			spacing: Ink.gap
 
 			ColumnLayout {
 				Layout.fillWidth: true
 				spacing: 1
 				Label {
 					text: "Battery usage"
-					color: Tinta.ink
+					color: Ink.ink
 					font.pixelSize: 20
 					font.bold: true
 				}
 				Label {
 					text: qsTr("by application")
-					color: Tinta.inkFaint
+					color: Ink.inkFaint
 					font.pixelSize: 12
 				}
 			}
@@ -68,15 +68,15 @@ ApplicationWindow {
 			// teaches you not to trust it.
 			Rectangle {
 				visible: launcher.available
-				implicitHeight: Tinta.tap
+				implicitHeight: Ink.tap
 				// Width follows the wider of the two labels so the header does
 				// not jump when the text changes.
 				implicitWidth: Math.max(energyLabel.implicitWidth,
 				                        openingLabel.implicitWidth + spinner.width + 6)
-				                + 2 * Tinta.gap
-				radius: Tinta.radius
-				color: launcher.opening || energyTap.pressed ? Tinta.surfaceDown
-				                                             : Tinta.surface
+				                + 2 * Ink.gap
+				radius: Ink.radius
+				color: launcher.opening || energyTap.pressed ? Ink.surfaceDown
+				                                             : Ink.surface
 				Behavior on color { ColorAnimation { duration: 120 } }
 
 				Label {
@@ -84,7 +84,7 @@ ApplicationWindow {
 					anchors.centerIn: parent
 					visible: !launcher.opening
 					text: qsTr("Battery ›")
-					color: Tinta.inkSoft
+					color: Ink.inkSoft
 					font.pixelSize: 13
 				}
 
@@ -102,7 +102,7 @@ ApplicationWindow {
 					Label {
 						id: openingLabel
 						text: qsTr("Opening…")
-						color: Tinta.inkSoft
+						color: Ink.inkSoft
 						font.pixelSize: 13
 					}
 				}
@@ -131,14 +131,14 @@ ApplicationWindow {
 	footer: Rectangle {
 		visible: calibrator.running || usage.note !== "" || usage.residual !== ""
 		         || calibrator.status !== ""
-		height: visible ? foot.implicitHeight + 2 * Tinta.gap : 0
-		color: Tinta.surface
+		height: visible ? foot.implicitHeight + 2 * Ink.gap : 0
+		color: Ink.surface
 
 		ColumnLayout {
 			id: foot
-			x: Tinta.gap
-			y: Tinta.gap
-			width: parent.width - 2 * Tinta.gap
+			x: Ink.gap
+			y: Ink.gap
+			width: parent.width - 2 * Ink.gap
 			spacing: 8
 
 			Label {
@@ -146,7 +146,7 @@ ApplicationWindow {
 				visible: text !== ""
 				text: calibrator.running || calibrator.status !== "" ? calibrator.status
 				                                                     : usage.note
-				color: Tinta.warning
+				color: Ink.warning
 				font.pixelSize: 12
 				wrapMode: Text.WordWrap
 			}
@@ -160,12 +160,12 @@ ApplicationWindow {
 				Layout.fillWidth: true
 				visible: usage.residual !== "" && !calibrator.running
 				text: usage.residual
-				color: Tinta.inkFaint
+				color: Ink.inkFaint
 				font.pixelSize: 11
 				wrapMode: Text.WordWrap
 			}
 
-			// The bar is driven by the clock, not by parsing calibrar's output:
+			// The bar is driven by the clock, not by parsing calibrate's output:
 			// its progress lines are prose for a person, and turning them into a
 			// machine interface would freeze that prose as an API.
 			ProgressBar {
@@ -179,14 +179,14 @@ ApplicationWindow {
 			RowLayout {
 				Layout.fillWidth: true
 				visible: !calibrator.screenKnown || calibrator.running
-				spacing: Tinta.gap
+				spacing: Ink.gap
 
 				Label {
 					Layout.fillWidth: true
 					visible: !calibrator.possible && !calibrator.running
 					         && calibrator.blockedReason !== ""
 					text: calibrator.blockedReason
-					color: Tinta.inkFaint
+					color: Ink.inkFaint
 					font.pixelSize: 11
 					wrapMode: Text.WordWrap
 				}
@@ -197,17 +197,17 @@ ApplicationWindow {
 
 				Rectangle {
 					visible: calibrator.possible || calibrator.running
-					implicitHeight: Tinta.tap
-					implicitWidth: calLabel.implicitWidth + 2 * Tinta.gap
-					radius: Tinta.radius
-					color: calTap.pressed ? Tinta.surfaceDown : Tinta.background
+					implicitHeight: Ink.tap
+					implicitWidth: calLabel.implicitWidth + 2 * Ink.gap
+					radius: Ink.radius
+					color: calTap.pressed ? Ink.surfaceDown : Ink.background
 
 					Label {
 						id: calLabel
 						anchors.centerIn: parent
 						text: calibrator.running ? qsTr("Cancel")
 						                         : qsTr("Calibrate screen (4 min)")
-						color: Tinta.ink
+						color: Ink.ink
 						font.pixelSize: 13
 					}
 					TapHandler {
