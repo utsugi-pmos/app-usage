@@ -9,7 +9,7 @@
 // fdinfo lines are being split on the character they are actually separated by.
 // Every one of those is a silent empty result, not an error.
 //
-//   ./probar-collector [seconds] [--forzar]      default 5 s
+//   ./try-collector [seconds] [--forzar]      default 5 s
 //
 // Note that attribute() will refuse the interval while the phone is plugged in,
 // which is correct and is itself worth seeing: see the guard in attribute().
@@ -58,7 +58,7 @@ int main(int argc, char **argv)
 		seconds = 5;
 
 	Calibration cal = Calibration::load(
-	    QDir::homePath() + QStringLiteral("/.config/app-usage/calibracion.ini"));
+	    QDir::homePath() + QStringLiteral("/.config/app-usage/calibration.ini"));
 	std::printf("calibration   cpu:%s screen:%s",
 	            cal.cpuKnown ? "yes" : "NO", cal.screenKnown ? "yes" : "NO");
 	if (cal.any())

@@ -23,7 +23,7 @@ Item {
 		// constantly while looking at this screen.
 		RowLayout {
 			Layout.fillWidth: true
-			Layout.margins: Tinta.gap
+			Layout.margins: Ink.gap
 			spacing: 8
 
 			Repeater {
@@ -35,14 +35,14 @@ Item {
 				delegate: Rectangle {
 					required property var modelData
 					Layout.fillWidth: true
-					implicitHeight: Tinta.tap
-					radius: Tinta.radius
-					color: usage.period === modelData.key ? Tinta.surfaceDown : Tinta.surface
+					implicitHeight: Ink.tap
+					radius: Ink.radius
+					color: usage.period === modelData.key ? Ink.surfaceDown : Ink.surface
 
 					Label {
 						anchors.centerIn: parent
 						text: modelData.label
-						color: usage.period === modelData.key ? Tinta.ink : Tinta.inkSoft
+						color: usage.period === modelData.key ? Ink.ink : Ink.inkSoft
 						font.pixelSize: 14
 					}
 					TapHandler { onTapped: usage.period = modelData.key }
@@ -52,10 +52,10 @@ Item {
 
 		RowLayout {
 			Layout.fillWidth: true
-			Layout.leftMargin: Tinta.gap
-			Layout.rightMargin: Tinta.gap
-			Layout.bottomMargin: Tinta.gap
-			spacing: Tinta.gap
+			Layout.leftMargin: Ink.gap
+			Layout.rightMargin: Ink.gap
+			Layout.bottomMargin: Ink.gap
+			spacing: Ink.gap
 
 			Label {
 				Layout.fillWidth: true
@@ -66,20 +66,20 @@ Item {
 				      ? qsTr("%1 kJ measured").arg((usage.measuredJ / 1000).toFixed(1))
 				      : qsTr("%1 J measured").arg(
 				            usage.measuredJ.toFixed(usage.measuredJ < 10 ? 2 : 0))
-				color: Tinta.inkSoft
+				color: Ink.inkSoft
 				font.pixelSize: 13
 			}
 
 			Rectangle {
 				implicitHeight: 34
-				implicitWidth: filterLabel.implicitWidth + 2 * Tinta.gap
-				radius: Tinta.radius
-				color: usage.showBackground ? Tinta.surfaceDown : Tinta.surface
+				implicitWidth: filterLabel.implicitWidth + 2 * Ink.gap
+				radius: Ink.radius
+				color: usage.showBackground ? Ink.surfaceDown : Ink.surface
 				Label {
 					id: filterLabel
 					anchors.centerIn: parent
 					text: usage.showBackground ? qsTr("All") : qsTr("Apps only")
-					color: Tinta.inkSoft
+					color: Ink.inkSoft
 					font.pixelSize: 12
 				}
 				TapHandler { onTapped: usage.showBackground = !usage.showBackground }
@@ -90,8 +90,8 @@ Item {
 			id: list
 			Layout.fillWidth: true
 			Layout.fillHeight: true
-			Layout.leftMargin: Tinta.gap
-			Layout.rightMargin: Tinta.gap
+			Layout.leftMargin: Ink.gap
+			Layout.rightMargin: Ink.gap
 			spacing: 6
 			clip: true
 			model: usage
@@ -110,22 +110,22 @@ Item {
 				width: ListView.view.width
 				height: card.height
 
-				readonly property color barColor: kind === "screen" ? Tinta.barScreen
-				                                : kind === "system" ? Tinta.barSystem
-				                                : Tinta.bar
+				readonly property color barColor: kind === "screen" ? Ink.barScreen
+				                                : kind === "system" ? Ink.barSystem
+				                                : Ink.bar
 				property bool expanded: false
 
 				Rectangle {
 					id: card
 					width: parent.width
-					height: content.implicitHeight + 2 * Tinta.gap
-					radius: Tinta.radius
-					color: Tinta.surface
+					height: content.implicitHeight + 2 * Ink.gap
+					radius: Ink.radius
+					color: Ink.surface
 
 					ColumnLayout {
 						id: content
 						anchors.fill: parent
-						anchors.margins: Tinta.gap
+						anchors.margins: Ink.gap
 						spacing: 8
 
 						RowLayout {
@@ -136,7 +136,7 @@ Item {
 								text: entry.name
 								// Dimmed rather than hidden: a background daemon
 								// eating the battery still has to be findable.
-								color: entry.background ? Tinta.inkSoft : Tinta.ink
+								color: entry.background ? Ink.inkSoft : Ink.ink
 								font.pixelSize: 15
 								elide: Text.ElideRight
 								Layout.fillWidth: true
@@ -149,7 +149,7 @@ Item {
 							Label {
 								visible: entry.background && entry.kind === "app"
 								text: qsTr("background")
-								color: Tinta.inkFaint
+								color: Ink.inkFaint
 								font.pixelSize: 10
 							}
 							Label {
@@ -159,7 +159,7 @@ Item {
 								text: entry.percent >= 0.1
 								      ? qsTr("%1 %").arg(entry.percent.toFixed(1))
 								      : qsTr("< 0.1 %")
-								color: Tinta.inkSoft
+								color: Ink.inkSoft
 								font.pixelSize: 14
 							}
 						}
@@ -170,7 +170,7 @@ Item {
 							Layout.fillWidth: true
 							height: 6
 							radius: 3
-							color: Tinta.surfaceDown
+							color: Ink.surfaceDown
 
 							Rectangle {
 								width: Math.max(parent.width * entry.share, entry.share > 0 ? 3 : 0)
@@ -192,19 +192,19 @@ Item {
 
 							Label {
 								text: qsTr("%1 J").arg(entry.joules.toFixed(2))
-								color: Tinta.inkFaint
+								color: Ink.inkFaint
 								font.pixelSize: 12
 							}
 							Label {
 								visible: entry.cpuText !== ""
 								text: qsTr("CPU: %1").arg(entry.cpuText)
-								color: Tinta.inkFaint
+								color: Ink.inkFaint
 								font.pixelSize: 12
 							}
 							Label {
 								visible: entry.gpuText !== ""
 								text: qsTr("GPU: %1").arg(entry.gpuText)
-								color: Tinta.inkFaint
+								color: Ink.inkFaint
 								font.pixelSize: 12
 							}
 						}
@@ -230,7 +230,7 @@ Item {
 			// yet" there would be a plain falsehood sitting over real data.
 			Label {
 				anchors.centerIn: parent
-				width: parent.width - 4 * Tinta.gap
+				width: parent.width - 4 * Ink.gap
 				visible: usage.empty
 				text: usage.hiddenCount > 0
 				      // With '+', not by juxtaposition: in QML two adjacent
@@ -241,17 +241,17 @@ Item {
 				      : qsTr("Nothing to show yet")
 				horizontalAlignment: Text.AlignHCenter
 				wrapMode: Text.WordWrap
-				color: Tinta.inkFaint
+				color: Ink.inkFaint
 				font.pixelSize: 16
 			}
 		}
 
 		Label {
 			Layout.fillWidth: true
-			Layout.margins: Tinta.gap
+			Layout.margins: Ink.gap
 			visible: !usage.showBackground && usage.hiddenCount > 0
 			text: qsTr("%n background item(s) hidden", "", usage.hiddenCount)
-			color: Tinta.inkFaint
+			color: Ink.inkFaint
 			font.pixelSize: 11
 		}
 	}

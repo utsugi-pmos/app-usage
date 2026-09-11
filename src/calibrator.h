@@ -32,7 +32,7 @@ class Calibrator : public QObject {
 
 	// Whether it can run right now. The gauge only measures anything with the
 	// charger off, so offering the button while plugged in would be offering a
-	// four-minute wait for a file that calibrar would refuse to write.
+	// four-minute wait for a file that calibrate would refuse to write.
 	Q_PROPERTY(bool possible READ possible NOTIFY stateChanged)
 	Q_PROPERTY(QString blockedReason READ blockedReason NOTIFY stateChanged)
 

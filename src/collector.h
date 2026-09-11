@@ -73,7 +73,7 @@ struct IntervalResult {
 // proportional split -- but the screen model needs real numbers.
 struct Calibration {
 	// TWO flags, not one, because the two halves are measured separately and
-	// mean different things. `app-usage-calibrar --solo brillo` takes three
+	// mean different things. `app-usage-calibrate --solo brillo` takes three
 	// minutes and needs only a still phone; the CPU sweep takes eighteen and
 	// has to visit every OPP. Treating a screen-only run as "calibrated" would
 	// switch on the CPU ceiling with the device tree's unscaled milliwatts,

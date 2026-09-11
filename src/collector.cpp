@@ -148,7 +148,7 @@ Calibration Calibration::load(const QString &path)
 	c.screenBaseMw = s.value(QStringLiteral("screen/base_mw"), 0.0).toDouble();
 	c.screenFullMw = s.value(QStringLiteral("screen/full_mw"), 0.0).toDouble();
 
-	// Presence of the KEY, not a plausible value: calibrar writes only the
+	// Presence of the KEY, not a plausible value: calibrate writes only the
 	// sections it actually measured, so a missing [cpu] means "not measured"
 	// and has to stay distinguishable from "measured and came out at 1.0".
 	c.screenKnown = s.contains(QStringLiteral("screen/full_mw"))

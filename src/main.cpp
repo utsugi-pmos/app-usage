@@ -51,7 +51,7 @@ QString stateDir()
 QString configPath()
 {
 	return QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation)
-	       + QStringLiteral("/app-usage/calibracion.ini");
+	       + QStringLiteral("/app-usage/calibration.ini");
 }
 
 int runDaemon(const QString &dir, int periodSec, int flushSec, int keepDays, bool force)
@@ -67,7 +67,7 @@ int runDaemon(const QString &dir, int periodSec, int flushSec, int keepDays, boo
 		             "app-usaged: calibration %s. The order between applications is\n"
 		             "         still correct -- the factors cancel out in the\n"
 		             "         proportional split -- but %s\n"
-		             "         Try: app-usage-calibrar --solo brillo  (3 min, unplugged)\n",
+		             "         Try: app-usage-calibrate --solo brillo  (3 min, unplugged)\n",
 		             cal.any() ? "incomplete" : "absent",
 		             !cal.screenKnown && !cal.cpuKnown
 		                 ? "there will be no screen row and \"system\" will come out zero."
@@ -154,7 +154,7 @@ int runReport(const QString &dir, const QString &period)
 	Store store(dir);
 
 	// "No data yet, wait for a sweep" is a reassuring sentence, and it has to be
-	// EARNED. If the directory does not exist -- wrong --estado, a home that was
+	// EARNED. If the directory does not exist -- wrong --state, a home that was
 	// never written to, a typo -- then telling someone to wait is telling them
 	// to wait forever for a thing that will not happen. The two look identical
 	// from the outside, which is exactly why they have to be told apart here.
@@ -224,7 +224,7 @@ int runReport(const QString &dir, const QString &period)
 	// tens of minutes. Printing whole seconds turns the entire bottom of the
 	// list into "0 s", which reads as "did nothing" when it means "below the
 	// resolution I chose to print".
-	auto duracion = [](double seg) {
+	auto duration = [](double seg) {
 		if (seg >= 3600)
 			return QStringLiteral("%1 h").arg(seg / 3600.0, 0, 'f', 1);
 		if (seg >= 60)
@@ -275,7 +275,7 @@ int runReport(const QString &dir, const QString &period)
 		const double segundos = elapsedMs / 1000.0;
 		if (segundos > 0)
 			std::printf("\n  %s measured, %.0f mW average\n",
-			            qPrintable(duracion(segundos)), measured / segundos);
+			            qPrintable(duration(segundos)), measured / segundos);
 		std::printf("  the model attributes %.2f J to %.0f s of application CPU,\n"
 		            "  against %.2f J real: %+.0f %%\n",
 		            modelled / 1000.0, double(appCpu) / 1e6, measured / 1000.0,
@@ -320,8 +320,8 @@ int main(int argc, char **argv)
 	                            "sec", QStringLiteral("300"));
 	QCommandLineOption forceOpt(QStringList() << QStringLiteral("forzar"),
 	                            "save even with a charger attached. For testing only, "
-	                            "and requires --estado: the joules are worthless");
-	QCommandLineOption stateOpt(QStringList() << QStringLiteral("estado"),
+	                            "and requires --state: the joules are worthless");
+	QCommandLineOption stateOpt(QStringList() << QStringLiteral("state"),
 	                            "where it is stored (default ~/.local/state/app-usage)",
 	                            "dir");
 	p.addOption(daemonOpt);
@@ -336,7 +336,7 @@ int main(int argc, char **argv)
 
 	const QString dir = p.isSet(stateOpt) ? p.value(stateOpt) : stateDir();
 
-	// --forzar WITHOUT --estado is refused, and this is not pedantry: it is the
+	// --forzar WITHOUT --state is refused, and this is not pedantry: it is the
 	// exact mistake that happened here. Forcing writes intervals measured with a
 	// charger attached, where the battery barely circulates and the joules mean
 	// nothing -- and it wrote them straight into the real store, which then had
@@ -344,15 +344,15 @@ int main(int argc, char **argv)
 	// makes that impossible rather than merely discouraged.
 	if (p.isSet(forceOpt) && !p.isSet(stateOpt)) {
 		std::fprintf(stderr,
-		             "--forzar needs --estado <dir>.\n"
+		             "--forzar needs --state <dir>.\n"
 		             "\n"
 		             "It forces intervals measured WITH a charger, where the battery\n"
 		             "barely circulates and the joules mean nothing. Writing them\n"
 		             "into the real store contaminates it without anyone noticing:\n"
 		             "the numbers come out, and they are a lie.\n"
 		             "\n"
-		             "  app-usaged --demonio --forzar --estado /tmp/prueba\n"
-		             "  app-usaged --informe --estado /tmp/prueba\n");
+		             "  app-usaged --demonio --forzar --state /tmp/test\n"
+		             "  app-usaged --informe --state /tmp/test\n");
 		return 2;
 	}
 
