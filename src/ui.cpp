@@ -77,14 +77,13 @@ int main(int argc, char **argv)
 	QObject::connect(&engine, &QQmlApplicationEngine::objectCreationFailed, &app,
 	                 []() { QCoreApplication::exit(1); }, Qt::QueuedConnection);
 
-	// By URL rather than loadFromModule(), and lowercase main.qml rather than
-	// Main.qml, to match screenglaze next door. loadFromModule() looks up a TYPE,
-	// and QML type names must start with a capital, so "AppUsage"/"main" fails
-	// with `Module "AppUsage" contains no type named "main"` -- which is what it
-	// did. Either renaming the file or loading the URL fixes it; the URL is what
-	// the other app in this repo already does, and one way of doing this is
-	// worth more than the more fashionable way.
-	engine.load(QUrl(QStringLiteral("qrc:/qt/qml/AppUsage/main.qml")));
+	// By URL rather than loadFromModule(). App.qml is the window; the screen
+	// itself is Body.qml, shared with the System Settings module so the two
+	// front-ends cannot drift. (The old entry was a lowercase main.qml loaded by
+	// URL because loadFromModule() looks up a TYPE and QML type names must start
+	// with a capital; App.qml would load either way, and the URL is what
+	// screenglaze next door already does.)
+	engine.load(QUrl(QStringLiteral("qrc:/qt/qml/AppUsage/App.qml")));
 
 	if (!grabTo.isEmpty()) {
 		const auto roots = engine.rootObjects();

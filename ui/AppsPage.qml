@@ -9,10 +9,12 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import AppUsage
 
 Item {
 	id: page
+
+	// UsageModel, passed in by whoever embeds this (the window or the KCM).
+	property var usage
 
 	ColumnLayout {
 		anchors.fill: parent

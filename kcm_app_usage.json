@@ -1,0 +1,20 @@
+{
+    "KPlugin": {
+        "Category": "Hardware",
+        "Description": "What is eating the battery, per application",
+        "Description[es]": "Qué se está comiendo la batería, por aplicación",
+        "FormFactors": [
+            "handset",
+            "tablet"
+        ],
+        "Icon": "battery-profile-symbolic",
+        "License": "LGPL-2.0-or-later",
+        "Name": "Battery usage",
+        "Name[es]": "Consumo de batería",
+        "Website": "https://github.com/utsugi-pmos/app-usage"
+    },
+    "X-KDE-Keywords": "battery,power,energy,usage,drain,consumption,per app",
+    "X-KDE-Keywords[es]": "batería,bateria,energía,consumo,gasto,pila,por aplicación",
+    "X-KDE-System-Settings-Parent-Category": "hardware",
+    "X-KDE-Weight": 40
+}
