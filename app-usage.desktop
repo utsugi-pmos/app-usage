@@ -8,6 +8,11 @@ Comment[es]=Qué se está comiendo la batería, en orden.
 Exec=app-usage
 Icon=app-usage
 Terminal=false
+# Out of the app drawer: battery usage lives in System Settings now (the
+# kcm_app_usage module, under Hardware), the same place lost-phone and
+# smart-unlock moved to. The window binary stays for `app-usage --capture` and
+# for anyone who wants to launch it directly; it is simply not advertised.
+NoDisplay=true
 Categories=System;Monitor;Qt;
 Keywords=battery;power;energy;usage;drain;
 Keywords[es]=bateria;batería;consumo;energia;energía;pila;
