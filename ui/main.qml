@@ -12,6 +12,7 @@
 import QtQuick
 
 import org.kde.kcmutils as KCM
+import org.kde.kirigami as Kirigami
 
 KCM.AbstractKCM {
 	id: root
@@ -23,9 +24,21 @@ KCM.AbstractKCM {
 	topPadding: 0
 	bottomPadding: 0
 
+	// The link to Plasma's own battery page, where a module keeps its links: in
+	// the header, next to the name System Settings already draws.
+	actions: [
+		Kirigami.Action {
+			text: kcm.launcher.opening ? qsTr("Opening…") : qsTr("Battery")
+			icon.name: "battery-symbolic"
+			visible: kcm.launcher.available
+			enabled: !kcm.launcher.opening
+			onTriggered: kcm.launcher.openEnergySettings()
+		}
+	]
+
 	Body {
 		anchors.fill: parent
-		showTitle: false
+		showHeader: false
 		usageModel: kcm.usage
 		launcherObj: kcm.launcher
 		calibratorObj: kcm.calibrator
