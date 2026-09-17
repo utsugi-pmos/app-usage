@@ -25,6 +25,7 @@ KCM.AbstractKCM {
 
 	Body {
 		anchors.fill: parent
+		showTitle: false
 		usageModel: kcm.usage
 		launcherObj: kcm.launcher
 		calibratorObj: kcm.calibrator
