@@ -11,35 +11,45 @@ pragma Singleton
 import QtQuick
 
 QtObject {
-	// Dark, because this is a phone screen you open to find out why the battery
-	// is going and the panel itself is on the list of suspects. On an OLED a
-	// near-black background is the cheapest row in the table.
-	readonly property color background: "#17181c"
-	readonly property color surface: "#212329"
-	readonly property color surfaceDown: "#2e313a"
+	// The colours follow the user's colour scheme. They were a fixed dark
+	// palette, chosen for OLED, and inside System Settings -- light by default
+	// -- the page read as a dark slab pasted into a light window; the owner
+	// asked for it to follow the theme on 2026-09-17.
+	//
+	// SystemPalette and not Kirigami.Theme: this is a singleton, and Kirigami's
+	// attached Theme needs an Item to inherit from. On Plasma the platform
+	// theme fills SystemPalette from the same colour scheme, so both agree.
+	readonly property SystemPalette pal: SystemPalette { colorGroup: SystemPalette.Active }
 
-	readonly property color ink: "#ffffff"
-	readonly property color inkSoft: "#a9aeba"
-	readonly property color inkFaint: "#70757f"
+	// A dark scheme is one whose window is darker than its text.
+	readonly property bool dark: pal.window.hslLightness < pal.windowText.hslLightness
 
-	// The bars. Applications share one colour on purpose: a rainbow implies the
-	// colours mean something, and here only the LENGTH means anything.
-	readonly property color bar: "#5b8def"
-	// The two non-application consumers get their own so they read as different
-	// in kind rather than as just another app.
-	readonly property color barScreen: "#f2b544"
-	readonly property color barSystem: "#6f7480"
+	function mix(a, b, t) {
+		return Qt.rgba(a.r + (b.r - a.r) * t, a.g + (b.g - a.g) * t,
+		               a.b + (b.b - a.b) * t, 1)
+	}
 
-	readonly property color warning: "#f2b544"
+	readonly property color background: pal.window
+	readonly property color surface: pal.base
+	// Pressed or selected: the card tinted towards the accent, visible in
+	// both a light and a dark scheme.
+	readonly property color surfaceDown: mix(pal.base, pal.highlight, dark ? 0.30 : 0.18)
 
-	// The charge bar, and the only place in the app where colour carries meaning
-	// rather than just separating things. Read at arm's length: fine, getting
-	// low, or a problem. Charging gets its own colour instead of green so that
-	// "plugged in at 20 %" does not look like "20 % and falling".
-	readonly property color good: "#4caf72"
-	readonly property color low: "#f2b544"
-	readonly property color critical: "#e2574c"
-	readonly property color charging: "#5b8def"
+	readonly property color ink: pal.windowText
+	readonly property color inkSoft: mix(pal.windowText, pal.window, 0.30)
+	readonly property color inkFaint: mix(pal.windowText, pal.window, 0.50)
+
+	// The bars. Applications share the accent colour on purpose: a rainbow
+	// implies the colours mean something, and here only the LENGTH means
+	// anything. The two non-application consumers get their own so they read
+	// as different in kind rather than as just another app.
+	readonly property color bar: pal.highlight
+	readonly property color barScreen: warning
+	readonly property color barSystem: inkFaint
+
+	// Amber reads on a dark background; on a light one the same amber is too
+	// pale for text, so it darkens.
+	readonly property color warning: dark ? "#f2b544" : "#a86b00"
 
 	readonly property int radius: 14
 	readonly property int gap: 12
