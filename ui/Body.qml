@@ -23,6 +23,10 @@ Item {
 
 	// UsageModel, Launcher, Calibrator. Set by whoever embeds this.
 	property var usageModel
+	// The window needs the name; System Settings already shows it in its own
+	// header, and repeating it there was the first thing that made the page
+	// look cluttered.
+	property bool showTitle: true
 	property var launcherObj
 	property var calibratorObj
 
@@ -45,6 +49,7 @@ Item {
 
 				ColumnLayout {
 					Layout.fillWidth: true
+					visible: bodyRoot.showTitle
 					spacing: 1
 					Label {
 						text: "Battery usage"
@@ -65,6 +70,11 @@ Item {
 				// And while it IS opening it says so. Measured, kcmshell6 takes
 				// 1.9 s to put a window on screen; without this the button
 				// swallows the tap and sits there for two seconds looking broken.
+				Item {
+					visible: !bodyRoot.showTitle
+					Layout.fillWidth: true
+				}
+
 				Rectangle {
 					visible: launcherObj ? launcherObj.available : false
 					implicitHeight: Ink.tap
