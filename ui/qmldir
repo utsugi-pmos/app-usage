@@ -1,0 +1,4 @@
+singleton Ink 1.0 Ink.qml
+singleton Format 1.0 Format.qml
+Body 1.0 Body.qml
+AppsPage 1.0 AppsPage.qml

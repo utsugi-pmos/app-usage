@@ -121,14 +121,14 @@ endif()
 # and can see each other without an import. App.qml is NOT in ui/ on purpose: it
 # is the window's, and would otherwise be swept in too.
 #
-# Ink and Format are singletons and CMake has to be told, or the module
-# registers them as ordinary types and every `Ink.ink` in the QML is silently
-# undefined. This must be set before the macro reads the ui/ files.
-set_source_files_properties(
-	${CMAKE_CURRENT_SOURCE_DIR}/ui/Ink.qml
-	${CMAKE_CURRENT_SOURCE_DIR}/ui/Format.qml
-	PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
-
+# Ink and Format are singletons, and for the KCM it is ui/qmldir that says so.
+# kcmutils_add_qml_kcm() does not build a QML module: it globs ui/ into a plain
+# Qt resource under qrc:/kcm/kcm_app_usage/ and the engine imports that folder
+# implicitly. Without a qmldir there, a file with "pragma Singleton" is just a
+# type, every Ink.gap and Ink.surface is undefined, and the screen collapses
+# into overlapping rows with no colours -- which is how it shipped in 1.4, seen
+# on the phone on 2026-09-17. (QT_QML_SINGLETON_TYPE, set here before, only
+# affects qt_add_qml_module and did nothing for the KCM.)
 kcmutils_add_qml_kcm(kcm_app_usage SOURCES kcm.cpp)
 target_link_libraries(kcm_app_usage PRIVATE
 	app-usage-frontend
